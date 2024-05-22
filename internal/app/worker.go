@@ -1,51 +1,65 @@
 package app
 
 import (
-	"context"
+	"fmt"
 	"log"
-	"gorm.io/gorm"
-	"github.com/redis/go-redis/v9"
+
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/smpp"
 )
 
-func StartWorker(db *gorm.DB, smppClient *smpp.Client, cfg config.Config) {
-    rdb := redis.NewClient(&redis.Options{
-        Addr: cfg.RedisURL,
-    })
+func InitSessionsAndClients(cfg *config.Config) map[string]*smpp.Session {
+    if cfg == nil {
+        panic("Config is nil")
+    }
 
-    rateLimiter := config.NewRateLimiter(cfg.RateLimit)
-    ctx := context.Background()
+    if len(cfg.ProvidersConfig) == 0 {
+        log.Println("ProvidersConfig is empty")
+    }
 
-    for {
-        rateLimiter.Wait(ctx)
+    providerSessions := map[string]*smpp.Session{}
 
-        message, err := rdb.BLPop(ctx, 0, "go-smpp").Result()
-        if err != nil {
-            log.Println("Error reading from Redis:", err)
+    for _, provider := range cfg.ProvidersConfig {
+        if provider == (config.Provider{}) {
+            log.Println("Provider is empty")
             continue
         }
 
-        // Assume message[1] contains the actual message, message[0] contains the queue name
-        err = processMessage(smppClient, message[1])
+        session, err := smpp.NewSession(provider)
+        
         if err != nil {
-            log.Println("Error processing message:", err)
+            log.Println("Failed to create session for provider", provider.Name)
+            continue
+        }
+       
+        if session != nil {
+            providerSessions[provider.Name] = session
         }
     }
+
+    return providerSessions
 }
 
-func processMessage(smppClient *smpp.Client, message string) error {
-    // Determine provider based on message or other logic
-    provider := "A" // Example, should be determined dynamically
+func StartWorker(cfg *config.Config){
+    sessions := InitSessionsAndClients(cfg)
+    // for _, session := range sessions {
 
-    switch provider {
-    case "A":
-        return HandleProviderA(smppClient, message)
-    case "B":
-        return HandleProviderB(smppClient, message)
-    case "C":
-        return HandleProviderC(smppClient, message)
-    default:
-        return nil
+    // }
+    if(len(sessions) == 0){
+        log.Fatal("No sessions to start")
+        return
     }
+
+    test1800(sessions["Provider_B"])
+
+}
+
+func test1800(session *smpp.Session) {
+    // send 1800
+    go func() {
+        for i := 0; i < 1800; i++ {
+            msg := fmt.Sprintf("msg %d", i)
+            session.Send(msg)
+        }
+    }()
 }

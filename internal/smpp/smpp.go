@@ -3,11 +3,9 @@ package smpp
 import (
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/rixtrayker/demo-smpp/internal/session"
 
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/data"
@@ -15,18 +13,19 @@ import (
 )
 
 type Session struct {
-    transceiver *gosmpp.TransceiverSession
-    mu          sync.Mutex
+    transceiver *gosmpp.Session
+    // mu          sync.Mutex
 }
 
-func NewSession(cfg config.Config, provider string) *Session {
+func NewSession(cfg config.Provider) (*Session, error){
     auth := gosmpp.Auth{
-        SMSC:       cfg.SMPPConfig.SMSC,
-        SystemID:   cfg.SMPPConfig.SystemID,
-        Password:   cfg.SMPPConfig.Password,
-        SystemType: cfg.SMPPConfig.SystemType,
+        SMSC:       cfg.SMSC,
+        SystemID:   cfg.SystemID,
+        Password:   cfg.Password,
+        SystemType: "",
     }
 
+    // use providerHandler later
     trans, err := gosmpp.NewSession(
         gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
         gosmpp.Settings{
@@ -51,16 +50,29 @@ func NewSession(cfg config.Config, provider string) *Session {
                 fmt.Println(state)
             },
         }, 5*time.Second)
-    if err != nil {
-        log.Fatal(err)
+
+    if err == gosmpp.ErrConnectionClosing{
+        fmt.Println(err)
+
     }
 
-    return &Session{transceiver: trans}
+    if err != nil  || trans == nil {
+        // if err is nil
+        if err == nil {
+            return nil, err
+            
+        }
+        fmt.Println(err)
+        return nil, err
+    }
+
+    return &Session{transceiver: trans}, nil
 }
 
 func (s *Session) Send(message string) error {
-    s.mu.Lock()
-    defer s.mu.Unlock()
+
+    // s.mu.Lock()
+    // defer s.mu.Unlock()
 
     submitSM := newSubmitSM(message)
     if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
