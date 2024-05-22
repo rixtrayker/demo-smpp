@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -30,6 +32,7 @@ type Provider struct {
     SystemID   string
     Password   string
     SystemType string
+    MaxOutStanding int
     // Host     string
     // Port     int
     // Username string
@@ -70,10 +73,16 @@ func loadProvidersConfig() []Provider {
 }
 
 func loadProviderConfig(provider string) Provider {
+    maxOutstanding, err := strconv.Atoi(strings.TrimSpace(os.Getenv(provider + "_MAX_OUTSTANDING")))
+    if err != nil {
+        maxOutstanding = 100
+    }
     return Provider{
-        Name:     os.Getenv(provider + "_NAME"),
-        SMSC:       os.Getenv(provider + "_SMSC"),
-        SystemID:   os.Getenv(provider + "_SYSTEM_ID"),
-        Password:   os.Getenv(provider + "_PASSWORD"),
+        Name:           strings.TrimSpace(os.Getenv(provider + "_NAME")),
+        SMSC:           strings.TrimSpace(os.Getenv(provider + "_SMSC")),
+        SystemID:       strings.TrimSpace(os.Getenv(provider + "_SYSTEM_ID")),
+        Password:       strings.TrimSpace(os.Getenv(provider + "_PASSWORD")),
+        SystemType:     strings.TrimSpace(os.Getenv(provider + "_SYSTEM_TYPE")),
+        MaxOutStanding: maxOutstanding,
     }
 }

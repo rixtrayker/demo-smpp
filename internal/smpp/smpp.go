@@ -1,141 +1,154 @@
 package smpp
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
-
-	"github.com/rixtrayker/demo-smpp/internal/config"
 
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/data"
 	"github.com/linxGnu/gosmpp/pdu"
+	"github.com/rixtrayker/demo-smpp/internal/config"
 )
 
 type Session struct {
-    transceiver *gosmpp.Session
-    // mu          sync.Mutex
+	transceiver    *gosmpp.Session
+	ctx            context.Context
+	outstandingCh  chan struct{}
+	maxOutstanding int
+	mu             sync.Mutex
 }
 
-func NewSession(cfg config.Provider) (*Session, error){
-    auth := gosmpp.Auth{
-        SMSC:       cfg.SMSC,
-        SystemID:   cfg.SystemID,
-        Password:   cfg.Password,
-        SystemType: "",
-    }
+func NewSession(ctx context.Context, cfg config.Provider) (*Session, error) {
+	auth := gosmpp.Auth{
+		SMSC:       cfg.SMSC,
+		SystemID:   cfg.SystemID,
+		Password:   cfg.Password,
+		SystemType: "",
+	}
 
-    // use providerHandler later
-    trans, err := gosmpp.NewSession(
-        gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
-        gosmpp.Settings{
-            EnquireLink: 5 * time.Second,
-            ReadTimeout: 10 * time.Second,
+	session := &Session{
+		ctx:            ctx,
+		maxOutstanding: cfg.MaxOutStanding,
+		outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+	}
 
-            OnSubmitError: func(_ pdu.PDU, err error) {
-                log.Fatal("SubmitPDU error:", err)
-            },
+	trans, err := gosmpp.NewSession(
+		gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
+		gosmpp.Settings{
+			EnquireLink: 5 * time.Second,
+			ReadTimeout: 10 * time.Second,
 
-            OnReceivingError: func(err error) {
-                fmt.Println("Receiving PDU/Network error:", err)
-            },
+			OnSubmitError: func(_ pdu.PDU, err error) {
+				log.Println("SubmitPDU error:", err)
+			},
 
-            OnRebindingError: func(err error) {
-                fmt.Println("Rebinding but error:", err)
-            },
+			OnReceivingError: func(err error) {
+				fmt.Println("Receiving PDU/Network error:", err)
+			},
 
-            OnAllPDU: handlePDU(),
+			OnRebindingError: func(err error) {
+				fmt.Println("Rebinding error:", err)
+			},
 
-            OnClosed: func(state gosmpp.State) {
-                fmt.Println(state)
-            },
-        }, 5*time.Second)
+			OnAllPDU: handlePDU(session),
 
-    if err == gosmpp.ErrConnectionClosing{
-        fmt.Println(err)
+			OnClosed: func(state gosmpp.State) {
+				fmt.Println(state)
+			},
+		}, 5*time.Second)
 
-    }
+	if err != nil {
+		fmt.Println("Failed to create session:", err)
+		return nil, err
+	}
 
-    if err != nil  || trans == nil {
-        // if err is nil
-        if err == nil {
-            return nil, err
-            
-        }
-        fmt.Println(err)
-        return nil, err
-    }
-
-    return &Session{transceiver: trans}, nil
+	session.transceiver = trans
+	return session, nil
 }
 
 func (s *Session) Send(message string) error {
-
-    // s.mu.Lock()
-    // defer s.mu.Unlock()
-
-    submitSM := newSubmitSM(message)
-    if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
-        fmt.Println(err)
-        return err
+    for {
+        select {
+        case <-s.ctx.Done():
+            return s.ctx.Err()
+        case s.outstandingCh <- struct{}{}:
+            submitSM := newSubmitSM(message)
+            if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
+                <-s.outstandingCh
+                return err
+            }
+            return nil
+        default:
+            time.Sleep(100 * time.Millisecond)
+        }
     }
-    return nil
 }
 
-func handlePDU() func(pdu.PDU) (pdu.PDU, bool) {
-    return func(p pdu.PDU) (pdu.PDU, bool) {
-        switch pd := p.(type) {
-        case *pdu.Unbind:
-            fmt.Println("Unbind Received")
-            return pd.GetResponse(), true
+func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
+	return func(p pdu.PDU) (pdu.PDU, bool) {
+		switch pd := p.(type) {
+		case *pdu.Unbind:
+			fmt.Println("Unbind Received")
+			return pd.GetResponse(), true
 
-        case *pdu.UnbindResp:
-            fmt.Println("UnbindResp Received")
+		case *pdu.UnbindResp:
+			fmt.Println("UnbindResp Received")
 
-        case *pdu.SubmitSMResp:
-            fmt.Println("SubmitSMResp Received")
+		case *pdu.SubmitSMResp:
+			fmt.Println("SubmitSMResp Received")
 
-        case *pdu.GenericNack:
-            fmt.Println("GenericNack Received")
+		case *pdu.GenericNack:
+			fmt.Println("GenericNack Received")
 
-        case *pdu.EnquireLinkResp:
-            fmt.Println("EnquireLinkResp Received")
+		case *pdu.EnquireLinkResp:
+			fmt.Println("EnquireLinkResp Received")
 
-        case *pdu.EnquireLink:
-            fmt.Println("EnquireLink Received")
-            return pd.GetResponse(), false
+		case *pdu.EnquireLink:
+			fmt.Println("EnquireLink Received")
+			return pd.GetResponse(), false
 
-        case *pdu.DataSM:
-            fmt.Println("DataSM receiver")
-            return pd.GetResponse(), false
+		case *pdu.DataSM:
+			fmt.Println("DataSM Received")
+			return pd.GetResponse(), false
 
-        case *pdu.DeliverSM:
-            fmt.Println("DeliverSM receiver")
-            return pd.GetResponse(), false
-        }
-        return nil, false
-    }
+		case *pdu.DeliverSM:
+			fmt.Println("DeliverSM Received")
+			defer func() { <-s.outstandingCh }()
+			return pd.GetResponse(), false
+		}
+		return nil, false
+	}
 }
 
 func newSubmitSM(message string) *pdu.SubmitSM {
-    srcAddr := pdu.NewAddress()
-    srcAddr.SetTon(5)
-    srcAddr.SetNpi(0)
-    _ = srcAddr.SetAddress("00" + "522241")
+	srcAddr := pdu.NewAddress()
+	srcAddr.SetTon(5)
+	srcAddr.SetNpi(0)
+	_ = srcAddr.SetAddress("00" + "522241")
 
-    destAddr := pdu.NewAddress()
-    destAddr.SetTon(1)
-    destAddr.SetNpi(1)
-    _ = destAddr.SetAddress("99" + "522241")
+	destAddr := pdu.NewAddress()
+	destAddr.SetTon(1)
+	destAddr.SetNpi(1)
+	_ = destAddr.SetAddress("99" + "522241")
 
-    submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
-    submitSM.SourceAddr = srcAddr
-    submitSM.DestAddr = destAddr
-    _ = submitSM.Message.SetMessageWithEncoding(message, data.UCS2)
-    submitSM.ProtocolID = 0
-    submitSM.RegisteredDelivery = 1
-    submitSM.ReplaceIfPresentFlag = 0
-    submitSM.EsmClass = 0
+	submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
+	submitSM.SourceAddr = srcAddr
+	submitSM.DestAddr = destAddr
+	_ = submitSM.Message.SetMessageWithEncoding(message, data.UCS2)
+	submitSM.ProtocolID = 0
+	submitSM.RegisteredDelivery = 1
+	submitSM.ReplaceIfPresentFlag = 0
+	submitSM.EsmClass = 0
 
-    return submitSM
+	return submitSM
+}
+
+func (s *Session) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	close(s.outstandingCh)
+	s.transceiver.Close()
 }
