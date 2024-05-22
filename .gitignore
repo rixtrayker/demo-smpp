@@ -1,3 +1,4 @@
 /.idx
 /.vscode
 /server.go
+.env

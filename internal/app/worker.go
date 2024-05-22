@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 	"gorm.io/gorm"
-	"github.com/go-redis/redis/v9"
+	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/smpp"
 )
