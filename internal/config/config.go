@@ -1,7 +1,7 @@
 package config
 
 import (
-    "os"
+	"os"
 )
 
 type Config struct {
@@ -9,10 +9,10 @@ type Config struct {
     RateLimit        int
     SMPPConfig       SMPPConfig
     DatabaseConfig   DatabaseConfig
+    ProvidersConfig []Provider
 }
 
 type SMPPConfig struct {
-    // Add necessary fields
     SMSC       string
     SystemID   string
     Password   string
@@ -24,12 +24,25 @@ type DatabaseConfig struct {
     DSN string
 }
 
+type Provider struct {
+    Name     string
+    SMSC       string
+    SystemID   string
+    Password   string
+    SystemType string
+    // Host     string
+    // Port     int
+    // Username string
+    // Password string
+}
+
 func LoadConfig() Config {
     return Config{
         RedisURL:         os.Getenv("REDIS_URL"),
         RateLimit:        100, // For example
         SMPPConfig:       loadSMPPConfig(),
         DatabaseConfig:   loadDatabaseConfig(),
+        ProvidersConfig:   loadProvidersConfig(),
     }
 }
 
@@ -45,5 +58,22 @@ func loadSMPPConfig() SMPPConfig {
 func loadDatabaseConfig() DatabaseConfig {
     return DatabaseConfig{
         DSN: os.Getenv("DATABASE_URL"),
+    }
+}
+
+func loadProvidersConfig() []Provider {
+    return []Provider{
+        loadProviderConfig("PROVIDER_A"),
+        loadProviderConfig("PROVIDER_B"),
+        loadProviderConfig("PROVIDER_C"),
+    }
+}
+
+func loadProviderConfig(provider string) Provider {
+    return Provider{
+        Name:     os.Getenv(provider + "_NAME"),
+        SMSC:       os.Getenv(provider + "_SMSC"),
+        SystemID:   os.Getenv(provider + "_SYSTEM_ID"),
+        Password:   os.Getenv(provider + "_PASSWORD"),
     }
 }
