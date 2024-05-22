@@ -2,63 +2,61 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/linxGnu/gosmpp/pdu"
+	"github.com/rixtrayker/demo-smpp/internal/session"
 )
 
-func ProviderAHandler(p pdu.PDU) (pdu.PDU, bool) {
+func ProviderAHandler(s *session.Session) func(p pdu.PDU) (pdu.PDU, bool) {
 	// Handler logic for provider A
-	return handlePDU(p)
+	return handlePDU(s)
 }
 
-func ProviderBHandler(p pdu.PDU) (pdu.PDU, bool) {
+func ProviderBHandler(s *session.Session) func(p pdu.PDU) (pdu.PDU, bool) {
 	// Handler logic for provider B
-	return handlePDU(p)
+	return handlePDU(s)
 }
 
-func ProviderCHandler(p pdu.PDU) (pdu.PDU, bool) {
+func ProviderCHandler(s *session.Session) func(p pdu.PDU) (pdu.PDU, bool) {
 	// Handler logic for provider C
-	return handlePDU(p)
+	return handlePDU(s)
 }
 
-func handlePDU(p pdu.PDU) (pdu.PDU, bool) {
-	concatenated := map[uint8][]string{}
-	switch pd := p.(type) {
-	case *pdu.SubmitSMResp:
-		fmt.Println("SubmitSMResp:")//pd)
 
-	case *pdu.GenericNack:
-		// fmt.Println("GenericNack Received")
+func handlePDU(s *session.Session) func(pdu.PDU) (pdu.PDU, bool) {
+	return func(p pdu.PDU) (pdu.PDU, bool) {
+		switch pd := p.(type) {
+		case *pdu.Unbind:
+			fmt.Println("Unbind Received")
+			return pd.GetResponse(), true
 
-	case *pdu.EnquireLinkResp:
-		// fmt.Println("EnquireLinkResp Received")
+		case *pdu.UnbindResp:
+			fmt.Println("UnbindResp Received")
 
-	case *pdu.DataSM:
-		// fmt.Printf("DataSM:")//pd)
+		case *pdu.SubmitSMResp:
+			fmt.Println("SubmitSMResp Received")
 
-	case *pdu.DeliverSM:
-		// fmt.Printf("DeliverSM:")//pd)
-		// log.Println(pd.Message.GetMessage())
-		// region concatenated sms (sample code)
-		message, err := pd.Message.GetMessage()
-		if err != nil {
-			log.Fatal(err)
-		}
-		totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
-		if found {
-			if _, ok := concatenated[reference]; !ok {
-				concatenated[reference] = make([]string, totalParts)
+		case *pdu.GenericNack:
+			fmt.Println("GenericNack Received")
+
+		case *pdu.EnquireLinkResp:
+			fmt.Println("EnquireLinkResp Received")
+
+		case *pdu.EnquireLink:
+			fmt.Println("EnquireLink Received")
+			return pd.GetResponse(), false
+
+		case *pdu.DataSM:
+			fmt.Println("DataSM Received")
+			return pd.GetResponse(), false
+
+		case *pdu.DeliverSM:
+			fmt.Println("DeliverSM Received")
+			if s != nil {
+				defer func() { <-s.OutstandingCh }()
 			}
-			concatenated[reference][sequence-1] = message
+			return pd.GetResponse(), false
 		}
-		if !found {
-			// log.Println(message)
-		} else if _, ok := concatenated[reference]; ok {
-			log.Println(concatenated[reference])
-			// delete(concatenated, reference)
-		}
-		// endregion
+		return nil, false
 	}
-	return nil, false
 }

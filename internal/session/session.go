@@ -16,27 +16,11 @@ import (
 type Session struct {
 	transceiver    *gosmpp.Session
 	ctx            context.Context
-	outstandingCh  chan struct{}
+	OutstandingCh  chan struct{}
 	maxOutstanding int
 	mu             sync.Mutex
 	handler        func(pdu.PDU) (pdu.PDU, bool)
-}
-
-func CreateSessionWithRetry(ctx context.Context, provider config.Provider) (*Session, error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-			session, err := NewSession(ctx, provider)
-			if err == nil {
-				return session, nil
-			}
-			log.Println("Failed to create session for provider", provider.Name, err)
-			log.Println("Retrying connection...")
-			time.Sleep(3 * time.Second)
-		}
-	}
+	self 		 *Session
 }
 
 func NewSession(ctx context.Context, cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
@@ -50,7 +34,13 @@ func NewSession(ctx context.Context, cfg config.Provider, handler func(pdu.PDU) 
 	session := &Session{
 		ctx:            ctx,
 		maxOutstanding: cfg.MaxOutStanding,
-		outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+		OutstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+	}
+
+	session.self = session
+
+	if handler == nil {
+		session.handler = handlePDU(session)
 	}
 
 	trans, err := gosmpp.NewSession(
@@ -71,7 +61,7 @@ func NewSession(ctx context.Context, cfg config.Provider, handler func(pdu.PDU) 
 				fmt.Println("Rebinding error:", err)
 			},
 
-			OnAllPDU: handlePDU(session),
+			OnAllPDU: handler,
 
 			OnClosed: func(state gosmpp.State) {
 				fmt.Println(state)
@@ -92,14 +82,14 @@ func (s *Session) Send(message string) error {
 		select {
 		case <-s.ctx.Done():
 			return s.ctx.Err()
-		case s.outstandingCh <- struct{}{}:
+		case s.OutstandingCh <- struct{}{}:
 			submitSM := newSubmitSM(message)
 			if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
-				<-s.outstandingCh
+				<-s.OutstandingCh
 				return err
 			}
 			go func() {
-				defer func() { <-s.outstandingCh }()
+				defer func() { <-s.OutstandingCh }()
 			}()
 			return nil
 		default:
@@ -137,7 +127,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 		case *pdu.DeliverSM:
 			fmt.Println("DeliverSM Received")
-			defer func() { <-s.outstandingCh }()
+			defer func() { <-s.OutstandingCh }()
 			return pd.GetResponse(), false
 		}
 		return nil, false
@@ -171,6 +161,6 @@ func newSubmitSM(message string) *pdu.SubmitSM {
 func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	close(s.outstandingCh)
+	close(s.OutstandingCh)
 	s.transceiver.Close()
 }

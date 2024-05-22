@@ -6,8 +6,9 @@ import (
 	"log"
 	"sync"
 
+	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	_ "github.com/rixtrayker/demo-smpp/internal/handlers"
+	"github.com/rixtrayker/demo-smpp/internal/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/session"
 )
 
@@ -27,6 +28,10 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string
 	mu := sync.Mutex{}
 	for _, provider := range cfg.ProvidersConfig {
 		wg.Add(1)
+		if provider == (config.Provider{}) {
+			log.Println("Provider " + provider.Name + " is empty")
+			continue
+		}
 		go func(provider config.Provider) {
 			defer wg.Done()
 			if provider == (config.Provider{}) {
@@ -38,7 +43,17 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string
 				log.Println("Provider", provider.Name)
 			}
 
-			sess, err := session.CreateSessionWithRetry(ctx, provider)
+			var handler func(pdu.PDU) (pdu.PDU, bool)
+			switch provider.Name {
+			case "Provider_A":
+				handler = handlers.ProviderAHandler(providerSessions[provider.Name])
+			case "Provider_B":
+				handler = handlers.ProviderBHandler(providerSessions[provider.Name])
+			case "Provider_C":
+				handler = handlers.ProviderCHandler(providerSessions[provider.Name])
+			}
+
+			sess, err := session.NewSession(ctx, provider, handler)
 			if err != nil {
 				log.Println("Failed to create session for provider", provider.Name, err)
 				return
@@ -65,8 +80,9 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string
 }
 
 func StartWorker(ctx context.Context, cfg *config.Config) {
-	sessions, cancel := InitSessionsAndClients(ctx, cfg)
-	defer cancel()
+	// sessions, cancel := InitSessionsAndClients(ctx, cfg)
+	sessions, _ := InitSessionsAndClients(ctx, cfg)
+	// defer cancel()
 
 	if len(sessions) == 0 {
 		log.Fatal("No sessions to start")
@@ -76,7 +92,6 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 	if session, ok := sessions["Provider_B"]; ok {
 		go func() {
 			test1800(ctx, session)
-			cancel()
 		}()
 	}
 
@@ -86,11 +101,6 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 
 func test1800(ctx context.Context, session *session.Session) {
 	log.Println("Sending 1800 messages")
-
-	msg := "msg -1"
-	if err := session.Send(msg); err != nil {
-		log.Println("Failed to send initial message:", err)
-	}
 
 	for i := 0; i < 1800; i++ {
 		select {
