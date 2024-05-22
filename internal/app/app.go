@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/rixtrayker/demo-smpp/internal/smpp"
+	_ "github.com/rixtrayker/demo-smpp/internal/handlers"
+	"github.com/rixtrayker/demo-smpp/internal/session"
 )
 
-func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string]*smpp.Session, context.CancelFunc) {
+func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string]*session.Session, context.CancelFunc) {
 	if cfg == nil {
 		panic("Config is nil")
 	}
@@ -18,29 +20,46 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) (map[string
 		log.Println("ProvidersConfig is empty")
 	}
 
-	providerSessions := make(map[string]*smpp.Session)
+	providerSessions := make(map[string]*session.Session)
 	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
 
+	mu := sync.Mutex{}
 	for _, provider := range cfg.ProvidersConfig {
-		if provider == (config.Provider{}) {
-			log.Println("Provider is empty")
-			continue
-		}
+		wg.Add(1)
+		go func(provider config.Provider) {
+			defer wg.Done()
+			if provider == (config.Provider{}) {
+				log.Println("Provider is empty")
+				return
+			}
 
-		if provider.Name != "" {
-			log.Println("Provider", provider.Name)
-		}
+			if provider.Name != "" {
+				log.Println("Provider", provider.Name)
+			}
 
-		session, err := smpp.NewSession(ctx, provider)
-		if err != nil {
-			log.Println("Failed to create session for provider", provider.Name, err)
-			continue
-		}
+			sess, err := session.CreateSessionWithRetry(ctx, provider)
+			if err != nil {
+				log.Println("Failed to create session for provider", provider.Name, err)
+				return
+			}
 
-		if session != nil {
-			providerSessions[provider.Name] = session
-		}
+			if sess != nil {
+				mu.Lock()
+				providerSessions[provider.Name] = sess
+				mu.Unlock()
+			}
+		}(provider)
 	}
+
+	wg.Wait()
+
+	go func() {
+		<-ctx.Done()
+		for _, sess := range providerSessions {
+			sess.Close()
+		}
+	}()
 
 	return providerSessions, cancel
 }
@@ -54,12 +73,18 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 		return
 	}
 
-	if sessions["Provider_B"] != nil {
-		test1800(ctx, sessions["Provider_B"])
+	if session, ok := sessions["Provider_B"]; ok {
+		go func() {
+			test1800(ctx, session)
+			cancel()
+		}()
 	}
+
+	<-ctx.Done()
+	log.Println("Main cancelled, stopping worker")
 }
 
-func test1800(ctx context.Context, session *smpp.Session) {
+func test1800(ctx context.Context, session *session.Session) {
 	log.Println("Sending 1800 messages")
 
 	msg := "msg -1"
