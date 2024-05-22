@@ -10,40 +10,42 @@ import (
 )
 
 func StartWorker(db *gorm.DB, smppClient *smpp.Client, cfg config.Config) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisURL,
-	})
+    rdb := redis.NewClient(&redis.Options{
+        Addr: cfg.RedisURL,
+    })
 
-	rateLimiter := config.NewRateLimiter(cfg.RateLimit)
-	ctx := context.Background()
+    rateLimiter := config.NewRateLimiter(cfg.RateLimit)
+    ctx := context.Background()
 
-	for {
-		rateLimiter.Wait(ctx)
+    for {
+        rateLimiter.Wait(ctx)
 
-		message, err := rdb.BLPop(ctx, 0, "go-smpp").Result()
-		if err != nil {
-			log.Println("Error reading from Redis:", err)
-			continue
-		}
+        message, err := rdb.BLPop(ctx, 0, "go-smpp").Result()
+        if err != nil {
+            log.Println("Error reading from Redis:", err)
+            continue
+        }
 
-		// Assume message[1] contains the actual message, message[0] contains the queue name
-		err = processMessage(smppClient, message[1])
-		if err != nil {
-			log.Println("Error processing message:", err)
-		}
-	}
+        // Assume message[1] contains the actual message, message[0] contains the queue name
+        err = processMessage(smppClient, message[1])
+        if err != nil {
+            log.Println("Error processing message:", err)
+        }
+    }
 }
 
 func processMessage(smppClient *smpp.Client, message string) error {
-	// Determine provider based on message or other logic
-	provider := "A" // Example, should be determined dynamically
+    // Determine provider based on message or other logic
+    provider := "A" // Example, should be determined dynamically
 
-	switch provider {
-	case "A":
-		return HandleProviderA(smppClient, message)
-	case "B":
-		return HandleProviderB(smppClient, message)
-	default:
-		return nil
-	}
+    switch provider {
+    case "A":
+        return HandleProviderA(smppClient, message)
+    case "B":
+        return HandleProviderB(smppClient, message)
+    case "C":
+        return HandleProviderC(smppClient, message)
+    default:
+        return nil
+    }
 }

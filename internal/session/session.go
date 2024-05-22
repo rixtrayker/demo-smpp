@@ -1,7 +1,7 @@
 package session
 
 import (
-	"linxGnu/gosmpp"
+	"github.com/linxGnu/gosmpp"
 
 	"github.com/rixtrayker/demo-smpp/internal/config"
 )

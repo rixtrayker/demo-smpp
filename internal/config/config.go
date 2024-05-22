@@ -13,10 +13,15 @@ type Config struct {
 
 type SMPPConfig struct {
     // Add necessary fields
+    SMSC       string
+    SystemID   string
+    Password   string
+    SystemType string
 }
 
 type DatabaseConfig struct {
     // Add necessary fields
+    DSN string
 }
 
 func LoadConfig() Config {
@@ -29,11 +34,16 @@ func LoadConfig() Config {
 }
 
 func loadSMPPConfig() SMPPConfig {
-    // Load SMPP specific configurations
-    return SMPPConfig{}
+    return SMPPConfig{
+        SMSC:       os.Getenv("SMSC"),
+        SystemID:   os.Getenv("SYSTEM_ID"),
+        Password:   os.Getenv("PASSWORD"),
+        SystemType: os.Getenv("SYSTEM_TYPE"),
+    }
 }
 
 func loadDatabaseConfig() DatabaseConfig {
-    // Load DB specific configurations
-    return DatabaseConfig{}
+    return DatabaseConfig{
+        DSN: os.Getenv("DATABASE_URL"),
+    }
 }

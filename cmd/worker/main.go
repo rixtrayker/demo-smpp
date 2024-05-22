@@ -5,7 +5,6 @@ import (
     "github.com/rixtrayker/demo-smpp/internal/db"
     "github.com/rixtrayker/demo-smpp/internal/smpp"
     "github.com/rixtrayker/demo-smpp/internal/app"
-    "github.com/rixtrayker/demo-smpp/internal/session"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
@@ -19,13 +18,13 @@ func main() {
     cfg := config.LoadConfig()
     db := db.Init(cfg)
 
-    providerSessions := map[string]*session.Session{
-        "A": session.New(cfg, "A"),
-        "B": session.New(cfg, "B"),
-        "C": session.New(cfg, "C"),
+    providerSessions := map[string]*smpp.Session{
+        "A": smpp.NewSession(cfg, "A"),
+        "B": smpp.NewSession(cfg, "B"),
+        "C": smpp.NewSession(cfg, "C"),
     }
 
-    smppClient := smpp.NewClient(providerSessions, cfg)
+    smppClient := smpp.NewSession(providerSessions, cfg)
 
     app.StartWorker(db, smppClient, cfg)
 }
