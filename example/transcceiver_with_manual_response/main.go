@@ -1,4 +1,4 @@
-package example
+package main
 
 import (
 	"fmt"
@@ -25,8 +25,8 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 
 	auth := gosmpp.Auth{
 		SMSC:       "localhost:2775",
-		SystemID:   "smppclient1",
-		Password:   "password",
+		SystemID:   "169994",
+		Password:   "EDXPJU",
 		SystemType: "",
 	}
 
@@ -49,7 +49,7 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 				fmt.Println("Rebinding but error:", err)
 			},
 
-			OnPDU: handlePDU(),
+			OnAllPDU: handlePDU(),
 
 			OnClosed: func(state gosmpp.State) {
 				fmt.Println(state)
@@ -62,52 +62,48 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 		_ = trans.Close()
 	}()
 
-	for i := 0; i < 1800; i++ {
+	// sending SMS(s)
+	for i := 0; i < 30; i++ {
 		if err = trans.Transceiver().Submit(newSubmitSM()); err != nil {
 			fmt.Println(err)
 		}
+		time.Sleep(time.Second)
 	}
+
 }
 
-func handlePDU() func(pdu.PDU, bool) {
-	concatenated := map[uint8][]string{}
-	return func(p pdu.PDU, _ bool) {
+func handlePDU() func(pdu.PDU) (pdu.PDU, bool) {
+	return func(p pdu.PDU) (pdu.PDU, bool) {
 		switch pd := p.(type) {
+		case *pdu.Unbind:
+			fmt.Println("Unbind Received")
+			return pd.GetResponse(), true
+
+		case *pdu.UnbindResp:
+			fmt.Println("UnbindResp Received")
+
 		case *pdu.SubmitSMResp:
-			fmt.Println("SubmitSMResp:")//pd)
+			fmt.Println("SubmitSMResp Received")
 
 		case *pdu.GenericNack:
-			// fmt.Println("GenericNack Received")
+			fmt.Println("GenericNack Received")
 
 		case *pdu.EnquireLinkResp:
-			// fmt.Println("EnquireLinkResp Received")
+			fmt.Println("EnquireLinkResp Received")
+
+		case *pdu.EnquireLink:
+			fmt.Println("EnquireLink Received")
+			return pd.GetResponse(), false
 
 		case *pdu.DataSM:
-			// fmt.Printf("DataSM:")//pd)
+			fmt.Println("DataSM receiver")
+			return pd.GetResponse(), false
 
 		case *pdu.DeliverSM:
-			// fmt.Printf("DeliverSM:")//pd)
-			// log.Println(pd.Message.GetMessage())
-			// region concatenated sms (sample code)
-			message, err := pd.Message.GetMessage()
-			if err != nil {
-				log.Fatal(err)
-			}
-			totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
-			if found {
-				if _, ok := concatenated[reference]; !ok {
-					concatenated[reference] = make([]string, totalParts)
-				}
-				concatenated[reference][sequence-1] = message
-			}
-			if !found {
-				// log.Println(message)
-			} else if parts, ok := concatenated[reference]; ok && isConcatenatedDone(parts, totalParts) {
-				// log.Println(strings.Join(parts, ""))
-				delete(concatenated, reference)
-			}
-			// endregion
+			fmt.Println("DeliverSM receiver")
+			return pd.GetResponse(), false
 		}
+		return nil, false
 	}
 }
 
@@ -126,20 +122,11 @@ func newSubmitSM() *pdu.SubmitSM {
 	submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
 	submitSM.SourceAddr = srcAddr
 	submitSM.DestAddr = destAddr
-	_ = submitSM.Message.SetMessageWithEncoding("amr", data.UCS2)
+	_ = submitSM.Message.SetMessageWithEncoding("Đừng buồn thế dù ngoài kia vẫn mưa nghiễng rợi tý tỵ", data.UCS2)
 	submitSM.ProtocolID = 0
 	submitSM.RegisteredDelivery = 1
 	submitSM.ReplaceIfPresentFlag = 0
 	submitSM.EsmClass = 0
 
 	return submitSM
-}
-
-func isConcatenatedDone(parts []string, total byte) bool {
-	for _, part := range parts {
-		if part != "" {
-			total--
-		}
-	}
-	return total == 0
 }

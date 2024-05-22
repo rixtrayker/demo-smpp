@@ -1,8 +1,9 @@
-package example
+package main
 
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +50,7 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 				fmt.Println("Rebinding but error:", err)
 			},
 
-			OnAllPDU: handlePDU(),
+			OnPDU: handlePDU(),
 
 			OnClosed: func(state gosmpp.State) {
 				fmt.Println(state)
@@ -63,27 +64,20 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 	}()
 
 	// sending SMS(s)
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 1800; i++ {
 		if err = trans.Transceiver().Submit(newSubmitSM()); err != nil {
 			fmt.Println(err)
 		}
 		time.Sleep(time.Second)
 	}
-
 }
 
-func handlePDU() func(pdu.PDU) (pdu.PDU, bool) {
-	return func(p pdu.PDU) (pdu.PDU, bool) {
+func handlePDU() func(pdu.PDU, bool) {
+	concatenated := map[uint8][]string{}
+	return func(p pdu.PDU, _ bool) {
 		switch pd := p.(type) {
-		case *pdu.Unbind:
-			fmt.Println("Unbind Received")
-			return pd.GetResponse(), true
-
-		case *pdu.UnbindResp:
-			fmt.Println("UnbindResp Received")
-
 		case *pdu.SubmitSMResp:
-			fmt.Println("SubmitSMResp Received")
+			fmt.Printf("SubmitSMResp:%+v\n", pd)
 
 		case *pdu.GenericNack:
 			fmt.Println("GenericNack Received")
@@ -91,19 +85,32 @@ func handlePDU() func(pdu.PDU) (pdu.PDU, bool) {
 		case *pdu.EnquireLinkResp:
 			fmt.Println("EnquireLinkResp Received")
 
-		case *pdu.EnquireLink:
-			fmt.Println("EnquireLink Received")
-			return pd.GetResponse(), false
-
 		case *pdu.DataSM:
-			fmt.Println("DataSM receiver")
-			return pd.GetResponse(), false
+			fmt.Printf("DataSM:%+v\n", pd)
 
 		case *pdu.DeliverSM:
-			fmt.Println("DeliverSM receiver")
-			return pd.GetResponse(), false
+			fmt.Printf("DeliverSM:%+v\n", pd)
+			log.Println(pd.Message.GetMessage())
+			// region concatenated sms (sample code)
+			message, err := pd.Message.GetMessage()
+			if err != nil {
+				log.Fatal(err)
+			}
+			totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
+			if found {
+				if _, ok := concatenated[reference]; !ok {
+					concatenated[reference] = make([]string, totalParts)
+				}
+				concatenated[reference][sequence-1] = message
+			}
+			if !found {
+				log.Println(message)
+			} else if parts, ok := concatenated[reference]; ok && isConcatenatedDone(parts, totalParts) {
+				log.Println(strings.Join(parts, ""))
+				delete(concatenated, reference)
+			}
+			// endregion
 		}
-		return nil, false
 	}
 }
 
@@ -129,4 +136,13 @@ func newSubmitSM() *pdu.SubmitSM {
 	submitSM.EsmClass = 0
 
 	return submitSM
+}
+
+func isConcatenatedDone(parts []string, total byte) bool {
+	for _, part := range parts {
+		if part != "" {
+			total--
+		}
+	}
+	return total == 0
 }
