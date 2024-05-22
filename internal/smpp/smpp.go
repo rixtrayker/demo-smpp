@@ -43,6 +43,8 @@ func NewSession(ctx context.Context, cfg config.Provider) (*Session, error) {
 
 			OnSubmitError: func(_ pdu.PDU, err error) {
 				log.Println("SubmitPDU error:", err)
+				// Release the semaphore slot
+				<-session.outstandingCh
 			},
 
 			OnReceivingError: func(err error) {
@@ -70,21 +72,17 @@ func NewSession(ctx context.Context, cfg config.Provider) (*Session, error) {
 }
 
 func (s *Session) Send(message string) error {
-    for {
-        select {
-        case <-s.ctx.Done():
-            return s.ctx.Err()
-        case s.outstandingCh <- struct{}{}:
-            submitSM := newSubmitSM(message)
-            if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
-                <-s.outstandingCh
-                return err
-            }
-            return nil
-        default:
-            time.Sleep(100 * time.Millisecond)
-        }
-    }
+	select {
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	case s.outstandingCh <- struct{}{}:
+		submitSM := newSubmitSM(message)
+		if err := s.transceiver.Transceiver().Submit(submitSM); err != nil {
+			<-s.outstandingCh
+			return err
+		}
+		return nil
+	}
 }
 
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
@@ -99,9 +97,13 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 		case *pdu.SubmitSMResp:
 			fmt.Println("SubmitSMResp Received")
+			// Release the semaphore slot
+			<-s.outstandingCh
 
 		case *pdu.GenericNack:
 			fmt.Println("GenericNack Received")
+			// Release the semaphore slot
+			<-s.outstandingCh
 
 		case *pdu.EnquireLinkResp:
 			fmt.Println("EnquireLinkResp Received")
@@ -116,7 +118,8 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 		case *pdu.DeliverSM:
 			fmt.Println("DeliverSM Received")
-			defer func() { <-s.outstandingCh }()
+			// Release the semaphore slot
+			<-s.outstandingCh
 			return pd.GetResponse(), false
 		}
 		return nil, false
