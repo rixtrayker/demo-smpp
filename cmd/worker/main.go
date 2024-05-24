@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/joho/godotenv"
@@ -26,14 +27,25 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	go func() {
+		defer wg.Done()
+
 		<-quit
 		logrus.Println("Shutting down gracefully...")
 		cancel()
 	}()
 
-	app.StartWorker(ctx, &cfg)
+	go func() {
+		defer wg.Done()
+
+		app.StartWorker(ctx, &cfg)
+	}()
+
+	wg.Wait()
+
 	logrus.Println("Worker stopped. Exiting.")
 }

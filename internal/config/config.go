@@ -33,6 +33,7 @@ type Provider struct {
     Password   string
     SystemType string
     MaxOutStanding int
+    MaxRetries int
     // Host     string
     // Port     int
     // Username string
@@ -72,11 +73,20 @@ func loadProvidersConfig() []Provider {
     }
 }
 
+
 func loadProviderConfig(provider string) Provider {
     maxOutstanding, err := strconv.Atoi(strings.TrimSpace(os.Getenv(provider + "_MAX_OUTSTANDING")))
+    globalMaxOutstanding := 100    
     if err != nil {
-        maxOutstanding = 100
+        maxOutstanding = globalMaxOutstanding
     }
+
+    maxRetries, err := strconv.Atoi(strings.TrimSpace(os.Getenv(provider + "_MAX_RETRIES")))
+    globalMaxRetries := 3
+    if err != nil {
+        maxRetries = globalMaxRetries
+    }
+
     return Provider{
         Name:           strings.TrimSpace(os.Getenv(provider + "_NAME")),
         SMSC:           strings.TrimSpace(os.Getenv(provider + "_SMSC")),
@@ -84,5 +94,6 @@ func loadProviderConfig(provider string) Provider {
         Password:       strings.TrimSpace(os.Getenv(provider + "_PASSWORD")),
         SystemType:     strings.TrimSpace(os.Getenv(provider + "_SYSTEM_TYPE")),
         MaxOutStanding: maxOutstanding,
+        MaxRetries:     maxRetries,
     }
 }

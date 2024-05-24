@@ -34,6 +34,7 @@ func handlePDU(s *session.Session) func(pdu.PDU) (pdu.PDU, bool) {
 			fmt.Println("UnbindResp Received")
 
 		case *pdu.SubmitSMResp:
+			// <-s.outstandingCh
 			fmt.Println("SubmitSMResp Received")
 
 		case *pdu.GenericNack:
@@ -52,9 +53,6 @@ func handlePDU(s *session.Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 		case *pdu.DeliverSM:
 			fmt.Println("DeliverSM Received")
-			if s != nil {
-				defer func() { <-s.OutstandingCh }()
-			}
 			return pd.GetResponse(), false
 		}
 		return nil, false
