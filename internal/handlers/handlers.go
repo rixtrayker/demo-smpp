@@ -24,6 +24,11 @@ func ProviderCHandler(s *session.Session) func(p pdu.PDU) (pdu.PDU, bool) {
 
 
 func handlePDU(s *session.Session) func(pdu.PDU) (pdu.PDU, bool) {
+	if s == nil{
+		return func(p pdu.PDU) (pdu.PDU, bool) {
+			return nil, false
+		}
+	}
 	return func(p pdu.PDU) (pdu.PDU, bool) {
 		switch pd := p.(type) {
 		case *pdu.Unbind:

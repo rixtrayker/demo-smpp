@@ -75,6 +75,16 @@ func loadProvidersConfig() []Provider {
 
 
 func loadProviderConfig(provider string) Provider {
+    name := strings.TrimSpace(os.Getenv(provider + "_NAME"))
+    smsc := strings.TrimSpace(os.Getenv(provider + "_SMSC"))
+    systemID := strings.TrimSpace(os.Getenv(provider + "_SYSTEM_ID"))
+    password := strings.TrimSpace(os.Getenv(provider + "_PASSWORD"))
+    systemType := strings.TrimSpace(os.Getenv(provider + "_SYSTEM_TYPE"))
+
+    if name == "" || smsc == "" || systemID == "" || password == "" {
+        return Provider{}
+    }
+
     maxOutstanding, err := strconv.Atoi(strings.TrimSpace(os.Getenv(provider + "_MAX_OUTSTANDING")))
     globalMaxOutstanding := 100    
     if err != nil {
@@ -88,11 +98,11 @@ func loadProviderConfig(provider string) Provider {
     }
 
     return Provider{
-        Name:           strings.TrimSpace(os.Getenv(provider + "_NAME")),
-        SMSC:           strings.TrimSpace(os.Getenv(provider + "_SMSC")),
-        SystemID:       strings.TrimSpace(os.Getenv(provider + "_SYSTEM_ID")),
-        Password:       strings.TrimSpace(os.Getenv(provider + "_PASSWORD")),
-        SystemType:     strings.TrimSpace(os.Getenv(provider + "_SYSTEM_TYPE")),
+        Name:           name,
+        SMSC:           smsc,
+        SystemID:       systemID,
+        Password:       password,
+        SystemType:     systemType,
         MaxOutStanding: maxOutstanding,
         MaxRetries:     maxRetries,
     }

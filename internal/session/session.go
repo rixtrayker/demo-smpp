@@ -50,44 +50,43 @@ func (s *Session) createSession(cfg config.Provider) error {
 
 	initialDelay := 100 * time.Millisecond
 	maxDelay := 10 * time.Second         
-	factor := 2.0                          
+	factor := 2.0     
+                     
+    for retries := 0; retries <= s.maxRetries; retries++ {
+        trans, err := gosmpp.NewSession(
+            gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
+            gosmpp.Settings{
+                EnquireLink: 5 * time.Second,
+                ReadTimeout: 10 * time.Second,
 
-	for retries := 0; retries <= s.maxRetries; retries++ {
-		trans, err := gosmpp.NewSession(
-			gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
-			gosmpp.Settings{
-				EnquireLink: 5 * time.Second,
-				ReadTimeout: 10 * time.Second,
+                OnSubmitError: func(_ pdu.PDU, err error) {
+                    log.Println("SubmitPDU error:", err)
+                },
 
-				OnSubmitError: func(_ pdu.PDU, err error) {
-					log.Println("SubmitPDU error:", err)
-				},
+                OnReceivingError: func(err error) {
+                    fmt.Println("Receiving PDU/Network error:", err)
+                },
 
-				OnReceivingError: func(err error) {
-					fmt.Println("Receiving PDU/Network error:", err)
-				},
+                OnRebindingError: func(err error) {
+                    fmt.Println("Rebinding error:", err)
+                },
 
-				OnRebindingError: func(err error) {
-					fmt.Println("Rebinding error:", err)
-				},
+                OnAllPDU: handlePDU(s),
 
-				OnAllPDU: handlePDU(s),
+                OnClosed: func(state gosmpp.State) {
+                    fmt.Println(state)
+                },
+            }, 5*time.Second)
 
-				OnClosed: func(state gosmpp.State) {
-					fmt.Println(state)
-				},
-			}, 5*time.Second)
+        if err == nil {
+            s.transceiver = trans
+            return nil
+        }
 
-		if err == nil {
-			s.transceiver = trans
-			return nil
-		}
-
-		delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-		log.Printf("Failed to create session, retrying in %v: %v", delay, err)
-		time.Sleep(delay)
-	}
-
+        delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
+        log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
+        time.Sleep(delay)
+    }
 	return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
 }
 
@@ -110,22 +109,23 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
             fmt.Println("Unbind Received")
             return pd.GetResponse(), true
         case *pdu.UnbindResp:
-            fmt.Println("UnbindResp Received")
+            // fmt.Println("UnbindResp Received")
         case *pdu.SubmitSMResp:
-            fmt.Println("SubmitSMResp Received")
-            <-s.outstandingCh
+            // <-s.outstandingCh
+            // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
-            <-s.outstandingCh
-            fmt.Println("GenericNack Received")
+            // fmt.Println("GenericNack Received")
         case *pdu.EnquireLinkResp:
-            fmt.Println("EnquireLinkResp Received")
+            // fmt.Println("EnquireLinkResp Received")
         case *pdu.EnquireLink:
-            fmt.Println("EnquireLink Received")
+            // fmt.Println("EnquireLink Received")
             return pd.GetResponse(), false
         case *pdu.DataSM:
-            fmt.Println("DataSM Received")
+            // fmt.Println("DataSM Received")
             return pd.GetResponse(), false
         case *pdu.DeliverSM:
+            // fmt.Println("OutstandingCh elements: ", len(s.outstandingCh))
+            <-s.outstandingCh
             fmt.Println("DeliverSM Received")
             return pd.GetResponse(), false
         }
