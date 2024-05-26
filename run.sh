@@ -1,7 +1,26 @@
 #!/bin/bash
-# proxy "go run cmd/worker/main.go" intercept and save packets using tcpdump
-# name save file with "proxy-dump-<timestamp:formatted(YYYY-mm-dd-h:m:s)>".pcap
-# run tcpdump with the following command:
-# prxoy this app run and capture only smpp calls and responses (talk to smpp server throu it )
-# incoming and outgoing packets on port 2775
-tcpdump -i any -w proxy-dump-$(date +"%Y-%m-%d-%H:%M:%S").pcap -s 0 -nn -tttt -A 'port 2775'
+# Script to create a proxy for capturing SMPP communication (port 2775) using tcpdump
+
+# Capture interface (replace with the actual interface used for SMPP traffic)
+capture_interface="any"
+
+# Function to generate a unique filename with timestamp and process ID
+generate_filename() {
+  local timestamp=$(date +"%Y-%m-%d-%H:%M:%S")
+  local random_id=$(echo $RANDOM)
+  echo "proxy-dump-${timestamp}-${random_id}.pcap"
+}
+
+# Capture packets with tcpdump
+filename=$(generate_filename)
+if command -v tcpdump >/dev/null 2>&1; then
+  tcpdump -i "$capture_interface" \
+         -w "$filename" \
+         -s 0 -nn -tttt -A 'port 2775' \
+  && echo "Packets captured successfully to $filename" || echo "Error: Failed to capture packets."
+else
+  echo "Error: tcpdump is not installed."
+fi
+
+# old command example
+# tcpdump -i any -w proxy-dump-$(date +"%Y-%m-%d-%H:%M:%S").pcap -s 0 -nn -tttt -A 'port 2775's
