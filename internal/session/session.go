@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,24 +15,25 @@ import (
 )
 
 type Session struct {
-    transceiver   *gosmpp.Session
+	transceiver   *gosmpp.Session
     ctx           context.Context
     maxOutstanding int
+    outstandingCh chan struct{}
     mu            sync.Mutex
     handler       func(pdu.PDU) (pdu.PDU, bool)
+	concatenated map[uint8][]string
     maxRetries    int
-    outstandingCh chan struct{}
 }
 
-func NewSession(ctx context.Context, cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
+func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
 	session := &Session{
-		ctx:            ctx,
-		maxOutstanding: cfg.MaxOutStanding,
-		handler:        handler,
+		ctx:          ctx,
+		concatenated: make(map[uint8][]string),
+		handler:      handler,
 		maxRetries:     cfg.MaxRetries,
+		maxOutstanding: cfg.MaxOutStanding,
         outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
 	}
-
 	err := session.createSession(cfg)
 	if err != nil {
 		return nil, err
@@ -56,42 +58,42 @@ func (s *Session) createSession(cfg config.Provider) error {
         trans, err := gosmpp.NewSession(
             gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
             gosmpp.Settings{
-                EnquireLink: 5 * time.Second,
-                ReadTimeout: 10 * time.Second,
+				EnquireLink: 5 * time.Second,
+				ReadTimeout: 10 * time.Second,
 
-                OnSubmitError: func(_ pdu.PDU, err error) {
-                    log.Println("SubmitPDU error:", err)
-                },
+				OnSubmitError: func(_ pdu.PDU, err error) {
+					log.Println("SubmitPDU error:", err)
+				},
 
-                OnReceivingError: func(err error) {
-                    fmt.Println("Receiving PDU/Network error:", err)
-                },
+				OnReceivingError: func(err error) {
+					fmt.Println("Receiving PDU/Network error:", err)
+				},
 
-                OnRebindingError: func(err error) {
-                    fmt.Println("Rebinding error:", err)
-                },
+				OnRebindingError: func(err error) {
+					fmt.Println("Rebinding error:", err)
+				},
 
-                OnAllPDU: handlePDU(s),
+				OnAllPDU: handlePDU(s),
 
-                OnClosed: func(state gosmpp.State) {
-                    fmt.Println(state)
-                },
-            }, 5*time.Second)
+				OnClosed: func(state gosmpp.State) {
+					fmt.Println(state)
+				},
+			}, 5*time.Second)
 
-        if err == nil {
-            s.transceiver = trans
-            return nil
-        }
+		if err == nil {
+		s.transceiver = trans
+		return nil
+		}
 
-        delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-        log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
-        time.Sleep(delay)
-    }
+		delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
+		log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
+		time.Sleep(delay)
+	}
 	return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
 }
 
-func (s *Session) Send(message string) error {
-    submitSM := newSubmitSM(message)
+func (s *Session) Send(number string, message string) error {
+    submitSM := newSubmitSM(number, message)
     s.outstandingCh <- struct{}{}
     err := s.transceiver.Transceiver().Submit(submitSM)
     fmt.Println("SubmitSM: " + message)
@@ -126,14 +128,13 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         case *pdu.DeliverSM:
             // fmt.Println("OutstandingCh elements: ", len(s.outstandingCh))
             <-s.outstandingCh
-            fmt.Println("DeliverSM Received")
-            return pd.GetResponse(), false
+			return s.handleDeliverSM(pd)
         }
         return nil, false
     }
 }
 
-func newSubmitSM(message string) *pdu.SubmitSM {
+func newSubmitSM(number, message string) *pdu.SubmitSM {
     srcAddr := pdu.NewAddress()
     srcAddr.SetTon(5)
     srcAddr.SetNpi(0)
@@ -142,7 +143,7 @@ func newSubmitSM(message string) *pdu.SubmitSM {
     destAddr := pdu.NewAddress()
     destAddr.SetTon(1)
     destAddr.SetNpi(1)
-    _ = destAddr.SetAddress("99" + "522241")
+    _ = destAddr.SetAddress(number)
 
     submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
     submitSM.SourceAddr = srcAddr
@@ -154,6 +155,60 @@ func newSubmitSM(message string) *pdu.SubmitSM {
     submitSM.EsmClass = 0
 
     return submitSM
+}
+
+func (s *Session) handleDeliverSM(pd *pdu.DeliverSM) (pdu.PDU, bool) {
+	message, err := pd.Message.GetMessage()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
+	log.Println("Reference:", reference)
+
+	if found {
+		return s.handleConcatenatedSMS(reference, message, totalParts, sequence, pd)
+	}
+	id := ""
+	result := strings.Split(message, "id:")
+	if len(result) > 1 {
+		id = result[1]
+	}
+	result = strings.Split(id, " ")
+	if len(result) > 1 {
+		id = result[0]
+	}
+
+	log.Println("Your msg id:", id)
+
+	return pd.GetResponse(), false
+}
+
+func (s *Session) handleConcatenatedSMS(reference uint8, message string, totalParts, sequence byte, pd *pdu.DeliverSM) (pdu.PDU, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.concatenated[reference]; !ok {
+		s.concatenated[reference] = make([]string, totalParts)
+	}
+
+	s.concatenated[reference][sequence-1] = message
+
+	if isConcatenatedDone(s.concatenated[reference], totalParts) {
+		log.Println(strings.Join(s.concatenated[reference], ""))
+		delete(s.concatenated, reference)
+	}
+
+	return pd.GetResponse(), false
+}
+
+func isConcatenatedDone(parts []string, total byte) bool {
+	for _, part := range parts {
+		if part == "" {
+			total--
+		}
+	}
+	return total == 0
 }
 
 func (s *Session) Close() {

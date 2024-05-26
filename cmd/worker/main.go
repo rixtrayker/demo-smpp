@@ -9,7 +9,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/rixtrayker/demo-smpp/internal/app"
-	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,8 +18,8 @@ func main() {
 		logrus.Fatal("Error loading .env file")
 	}
 
-	cfg := config.LoadConfig()
-
+	// cfg := config.LoadConfig()
+	// if its empty stop the program
 	// Channel to receive shutdown signals
 	quit := make(chan os.Signal, 1)
 	// Notify on SIGINT (CTRL+C) and SIGTERM (termination signal)
@@ -41,8 +40,8 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-
-		app.StartWorker(ctx, &cfg)
+		app.Test_redis(ctx)
+		// app.StartWorker(ctx, &cfg)
 	}()
 
 	wg.Wait()
