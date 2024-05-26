@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	// "github.com/linxGnu/gosmpp/pdu"
+	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+
 	// "github.com/rixtrayker/demo-smpp/internal/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/session"
 )
@@ -148,4 +151,35 @@ func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
     }
 
     close(sem)
+}
+
+type queueMessage struct {
+    Gateway string `json:"gateway"`
+    PhoneNumber string    `json:"phone_number"`
+    Text string `json:"text"`
+}
+
+func Test_redis(ctx context.Context) {
+    client := redis.NewClient(&redis.Options{
+        Addr:     "localhost:6379",
+        Password: "",
+        DB:       0,
+    })
+
+    queueName := "go-queue-testing"
+
+    result, err := client.BLPop(ctx, 10*time.Second, queueName).Result()
+    if err != nil {
+        panic(err)
+    }
+
+    jsonData := result[1]
+
+    var message queueMessage
+    err = json.Unmarshal([]byte(jsonData), &message)
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Gateway: %s, Phone Number: %s, Text: %s\n", message.Gateway, message.PhoneNumber, message.Text)
 }
