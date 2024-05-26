@@ -3,3 +3,4 @@
 /server.go
 .env
 todo
+/js/node_modules
