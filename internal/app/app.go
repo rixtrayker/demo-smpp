@@ -103,7 +103,8 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
         }(sess)
     }
 
-    // Fot testing concurrenct purposes
+    // Used to test concurrency
+
     // for i := 0; i < 5; i++ {
     //     wg.Add(1)
     //     go func() {
@@ -139,7 +140,7 @@ func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
                 defer wg.Done()
                 defer func() { <-sem }()
                 msg := fmt.Sprintf("msg %d", i)
-                if err := s.Send(msg); err != nil {
+                if err := s.Send("12345", msg); err != nil {
                     log.Println("Failed to send message:", err)
                 }
             }(s, i)

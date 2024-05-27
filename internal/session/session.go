@@ -22,9 +22,11 @@ type Session struct {
     mu            sync.Mutex
     handler       func(pdu.PDU) (pdu.PDU, bool)
 	concatenated map[uint8][]string
+	MessageIDs []string
     maxRetries    int
 }
 
+// may need to pass WG to wait for all sessions to close
 func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
 	session := &Session{
 		ctx:          ctx,
@@ -33,6 +35,8 @@ func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (
 		maxRetries:     cfg.MaxRetries,
 		maxOutstanding: cfg.MaxOutStanding,
         outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+		// init empty array to store who has sent message
+		MessageIDs: []string{},
 	}
 	err := session.createSession(cfg)
 	if err != nil {
@@ -113,6 +117,10 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         case *pdu.UnbindResp:
             // fmt.Println("UnbindResp Received")
         case *pdu.SubmitSMResp:
+			// push to s.MessageIDs
+			msgID := pd.MessageID
+			s.MessageIDs = append(s.MessageIDs, msgID)
+			fmt.Println("SubmitSMResp Received", msgID)
             // <-s.outstandingCh
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
