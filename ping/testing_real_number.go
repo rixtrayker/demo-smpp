@@ -82,6 +82,7 @@ func testZain(ctx context.Context, zain_number, msg string) {
 	zain_session, err := session.NewSession(ctx, cfg, nil)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	zain_session.Send(zain_number, msg)
 	// dump session message ids
@@ -100,6 +101,7 @@ func testMobily(ctx context.Context, mobily_number, msg string) {
 	mobily_session, err := session.NewSession(ctx, cfg, nil)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	mobily_session.Send(mobily_number, msg)
 	// dump session message ids
@@ -118,6 +120,7 @@ func testSTC(ctx context.Context, stc_number, msg string) {
 	stc_session, err := session.NewSession(ctx, cfg, nil)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	stc_session.Send(stc_number, msg)
 	// dump session message ids
