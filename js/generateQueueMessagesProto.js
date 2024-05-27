@@ -1,5 +1,10 @@
 const redis = require('redis');
 const client = redis.createClient();
+const protobuf = require('protobufjs');
+
+// Load the protobuf definition
+const root = protobuf.loadSync('message.proto');
+const QueueMessage = root.lookupType('QueueMessage');
 
 // Connect to Redis
 client.on('error', (err) => console.log('Redis Client Error', err));
@@ -10,7 +15,7 @@ function generateQueueMessage() {
   const gateway = ['zain', 'stc', 'mobily'][Math.floor(Math.random() * 3)];
   const phoneNumber = `+966${Math.floor(Math.random() * 1000000000)}`;
   const text = `This is a sample text message from ${gateway}.`;
-  return { gateway, "phone_number":phoneNumber, text };
+  return { gateway, phone_number: phoneNumber, text };
 }
 
 // Function to write messages to the Redis queue
@@ -20,8 +25,11 @@ async function writeToQueue(queueName, messageRate, duration) {
   let messageSent = 0;
 
   while (true) {
-    const message = JSON.stringify(generateQueueMessage());
-    await client.rPush(queueKey, message);
+    const messageData = generateQueueMessage();
+    const message = QueueMessage.create(messageData);
+    const buffer = QueueMessage.encode(message).finish();
+
+    await client.rPush(queueKey, buffer);
     messageSent++;
 
     const now = new Date().getTime();
@@ -40,7 +48,7 @@ async function writeToQueue(queueName, messageRate, duration) {
 
 // Main function
 async function main() {
-  const queueName = 'go-queue-testing';
+  const queueName = 'go-queue-testing-proto';
   const duration = process.argv[2] ? parseInt(process.argv[2]) : null; // Duration in seconds (null for indefinite)
 
   console.log(`Writing messages to Redis queue '${queueName}'...`);
