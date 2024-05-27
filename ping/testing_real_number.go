@@ -12,10 +12,8 @@ import (
 )
 
 var providersList []config.Provider
-var ctx = context.Background()
 
-
-func TestLive(wg *sync.WaitGroup) {
+func TestLive(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	fmt.Println("Testing Real Numbers")
 	cfg := config.LoadConfig()
@@ -26,41 +24,44 @@ func TestLive(wg *sync.WaitGroup) {
 	// load numbers from .env testing zain_number, mobily_number, stc_number
 	zain_number := os.Getenv("ZAIN_NUMBER")
 	mobily_number := os.Getenv("MOBILY_NUMBER")
-	stc_number := os.Getenv("STC_NUMBER") 
+	stc_number := os.Getenv("STC_NUMBER")
 
-	if(zain_number != "") {
+	if zain_number != "" {
 		fmt.Println("Testing Zain Number")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			testZain(zain_number,msg)
+			testZain(ctx, zain_number, msg)
 		}()
 	}
-	if(mobily_number != "") {
+	if mobily_number != "" {
 		fmt.Println("Testing Mobily Number")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			testMobily(mobily_number,msg)
+			testMobily(ctx, mobily_number, msg)
 		}()
 	}
-	if(stc_number != "") {
+	if stc_number != "" {
 		fmt.Println("Testing STC Number")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			testSTC(stc_number,msg)
+			testSTC(ctx, stc_number, msg)
 		}()
 	}
-	
+
 	fmt.Println("Testing Bassel Number")
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		testSTC("966551589449", msg)
+		testSTC(ctx, "966551589449", msg)
 	}()
-}
 
+	// Wait for cancellation signal
+	<-ctx.Done()
+	fmt.Println("TestLive cancelled")
+}
 
 func getProviderCfg(name string) config.Provider {
 	for _, provider := range providersList {
@@ -71,11 +72,11 @@ func getProviderCfg(name string) config.Provider {
 	return config.Provider{}
 }
 
-func testZain(zain_number, msg string) {
+func testZain(ctx context.Context, zain_number, msg string) {
 	cfg := getProviderCfg("Zain")
 	if cfg == (config.Provider{}) {
 		fmt.Println("empty zain config")
-		return 
+		return
 	}
 
 	zain_session, err := session.NewSession(ctx, cfg, nil)
@@ -85,16 +86,15 @@ func testZain(zain_number, msg string) {
 	zain_session.Send(zain_number, msg)
 	// dump session message ids
 	time.Sleep(30000 * time.Millisecond)
-
-	fmt.Println("MSGIDS: ",zain_session.MessageIDs)
+	fmt.Println("MSGIDS: ", zain_session.MessageIDs)
 }
 
 // testMobily func
-func testMobily(mobily_number, msg string) {
+func testMobily(ctx context.Context, mobily_number, msg string) {
 	cfg := getProviderCfg("Mobily")
 	if cfg == (config.Provider{}) {
 		fmt.Println("empty mobily config")
-		return 
+		return
 	}
 
 	mobily_session, err := session.NewSession(ctx, cfg, nil)
@@ -104,16 +104,15 @@ func testMobily(mobily_number, msg string) {
 	mobily_session.Send(mobily_number, msg)
 	// dump session message ids
 	time.Sleep(30000 * time.Millisecond)
-
-	fmt.Println("MSGIDS: ",mobily_session.MessageIDs)
+	fmt.Println("MSGIDS: ", mobily_session.MessageIDs)
 }
 
 // testSTC func
-func testSTC(stc_number, msg string) {
+func testSTC(ctx context.Context, stc_number, msg string) {
 	cfg := getProviderCfg("STC")
 	if cfg == (config.Provider{}) {
 		fmt.Println("empty stc config")
-		return 
+		return
 	}
 
 	stc_session, err := session.NewSession(ctx, cfg, nil)
@@ -123,5 +122,5 @@ func testSTC(stc_number, msg string) {
 	stc_session.Send(stc_number, msg)
 	// dump session message ids
 	time.Sleep(30000 * time.Microsecond)
-	fmt.Println("MSGIDS: ",stc_session.MessageIDs)
+	fmt.Println("MSGIDS: ", stc_session.MessageIDs)
 }

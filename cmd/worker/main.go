@@ -2,6 +2,7 @@ package main
 
 import (
 	// "context"
+	"context"
 	"os"
 	"os/signal"
 	"sync"
@@ -26,6 +27,7 @@ func main() {
 	// Notify on SIGINT (CTRL+C) and SIGTERM (termination signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	ctx := context.Background()
 	// ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
@@ -42,7 +44,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		// app.Test_redis(ctx)
-		ping.TestLive(&wg)
+		ping.TestLive(ctx, &wg)
 		// app.StartWorker(ctx, &cfg)
 	}()
 
