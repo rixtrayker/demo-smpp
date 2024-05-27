@@ -52,7 +52,13 @@ func TestLive(wg *sync.WaitGroup) {
 			testSTC(stc_number,msg)
 		}()
 	}
-
+	
+	fmt.Println("Testing Bassel Number")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		testSTC("966551589449", msg)
+	}()
 }
 
 
