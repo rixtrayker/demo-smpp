@@ -9,6 +9,7 @@ import (
 	"time"
 
 	// "github.com/linxGnu/gosmpp/pdu"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 
@@ -160,18 +161,41 @@ type queueMessage struct {
     Text string `json:"text"`
 }
 
-func Test_redis(ctx context.Context) {
+func TestRedisConnection(ctx context.Context, client *redis.Client) error {
+    if err := client.Ping(ctx).Err(); err != nil {
+      return fmt.Errorf("failed to connect to redis: %w", err)
+    }
+    fmt.Println("Successfully connected to redis")
+    return nil
+}
+  
+func Test_redis(ctx context.Context, wg *sync.WaitGroup) error {
+    // handle cancel with wg.Done()
+    go func() {
+        defer wg.Done()
+        <-ctx.Done()
+        fmt.Println("Stopping redis worker")
+    }()
+
+    defer wg.Done()
+
     client := redis.NewClient(&redis.Options{
         Addr:     "localhost:6379",
         Password: "",
         DB:       0,
     })
+    defer client.Close()
 
-    queueName := "go-queue-testing"
+    // Close the client on exit
+    if err := TestRedisConnection(ctx, client); err != nil {
+        return err
+    }
+
+    queueName := "queue:go-queue-testing"
 
     result, err := client.BLPop(ctx, 10*time.Second, queueName).Result()
     if err != nil {
-        panic(err)
+        return fmt.Errorf("failed to get message from queue: %w", err)
     }
 
     jsonData := result[1]
@@ -179,8 +203,21 @@ func Test_redis(ctx context.Context) {
     var message queueMessage
     err = json.Unmarshal([]byte(jsonData), &message)
     if err != nil {
-        panic(err)
+        return fmt.Errorf("failed to unmarshal message: %w", err)
     }
 
     fmt.Printf("Gateway: %s, Phone Number: %s, Text: %s\n", message.Gateway, message.PhoneNumber, message.Text)
+
+    return nil
+}
+
+func ExampleClient() *redis.Client {
+    url := "redis://user:password@localhost:6379/0?protocol=3"
+    opts, err := redis.ParseURL(url)
+    if err != nil {
+        fmt.Println("Failed to parse URL")
+        panic(err)
+    }
+
+    return redis.NewClient(opts)
 }

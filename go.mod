@@ -3,6 +3,8 @@ module github.com/rixtrayker/demo-smpp
 go 1.22.1
 
 require (
+	github.com/go-redis/redis/v8 v8.11.5
+	github.com/golang/protobuf v1.5.4
 	github.com/joho/godotenv v1.5.1
 	github.com/linxGnu/gosmpp v0.2.1
 	github.com/redis/go-redis/v9 v9.5.1
@@ -21,4 +23,5 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	golang.org/x/sys v0.19.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
