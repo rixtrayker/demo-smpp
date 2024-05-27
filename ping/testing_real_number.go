@@ -16,6 +16,7 @@ var ctx = context.Background()
 
 
 func TestLive(wg *sync.WaitGroup) {
+	defer wg.Done()
 	fmt.Println("Testing Real Numbers")
 	cfg := config.LoadConfig()
 
