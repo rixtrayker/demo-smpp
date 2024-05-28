@@ -1,0 +1,23 @@
+pipelines:
+  default:
+    branches:
+      - main
+
+  stages:
+    - clone
+
+scripts:
+  - stage: clone
+    - name: Clone code
+      commands:
+        - git clone $BITBUCKET_CLONE_URL
+
+  - stage: deploy
+    - depends_on: clone
+      # For example:
+      - name: Build GoLang app
+        commands:
+          - go build -o smpp-client cmd/worker/main.go
+      - name: Copy application to server (replace with your deployment method)
+        commands:
+          - scp smpp-client root@server:/root/demo-smpp
