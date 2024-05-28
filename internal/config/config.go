@@ -22,8 +22,11 @@ type SMPPConfig struct {
 }
 
 type DatabaseConfig struct {
-    // Add necessary fields
-    DSN string
+    Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	DBName   string `yaml:"dbname"`
 }
 
 type Provider struct {
@@ -34,7 +37,6 @@ type Provider struct {
     SystemType string
     MaxOutStanding int
     MaxRetries int
-    // Host     string
     // Port     int
     // Username string
     // Password string
@@ -43,7 +45,7 @@ type Provider struct {
 func LoadConfig() Config {
     return Config{
         RedisURL:         os.Getenv("REDIS_URL"),
-        RateLimit:        100, // For example
+        RateLimit:        100,
         SMPPConfig:       loadSMPPConfig(),
         DatabaseConfig:   loadDatabaseConfig(),
         ProvidersConfig:   loadProvidersConfig(),
@@ -63,7 +65,11 @@ func loadSMPPConfig() SMPPConfig {
 
 func loadDatabaseConfig() DatabaseConfig {
     return DatabaseConfig{
-        DSN: os.Getenv("DATABASE_URL"),
+        Host:     os.Getenv("DB_HOST"),
+        Port:     3306,
+        User:     os.Getenv("DB_USER"),
+        Password: os.Getenv("DB_PASSWORD"),
+        DBName:   os.Getenv("DB_NAME"),
     }
 }
 

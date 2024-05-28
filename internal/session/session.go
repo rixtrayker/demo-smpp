@@ -16,14 +16,21 @@ import (
 
 type Session struct {
 	transceiver   *gosmpp.Session
-    ctx           context.Context
-    maxOutstanding int
-    outstandingCh chan struct{}
-    mu            sync.Mutex
-    handler       func(pdu.PDU) (pdu.PDU, bool)
+	ctx           context.Context
+	maxOutstanding int
+	outstandingCh chan struct{}
+	mu            sync.Mutex
+	handler       func(pdu.PDU) (pdu.PDU, bool)
 	concatenated map[uint8][]string
-	MessageIDs []string
-    maxRetries    int
+	Status map[int32]*MessageStatus
+	maxRetries    int
+}
+
+type MessageStatus struct {
+	DreamsMessageID int
+	MessageID string
+	Status string
+	Number string
 }
 
 // may need to pass WG to wait for all sessions to close
@@ -35,8 +42,7 @@ func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (
 		maxRetries:     cfg.MaxRetries,
 		maxOutstanding: cfg.MaxOutStanding,
         outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
-		// init empty array to store who has sent message
-		MessageIDs: []string{},
+		Status: make(map[int32]*MessageStatus),
 	}
 	err := session.createSession(cfg)
 	if err != nil {
@@ -47,57 +53,77 @@ func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (
 }
 
 func (s *Session) createSession(cfg config.Provider) error {
-	auth := gosmpp.Auth{
-		SMSC:       cfg.SMSC,
-		SystemID:   cfg.SystemID,
-		Password:   cfg.Password,
-		SystemType: "",
-	}
+    auth := gosmpp.Auth{
+        SMSC:       cfg.SMSC,
+        SystemID:   cfg.SystemID,
+        Password:   cfg.Password,
+        SystemType: "",
+    }
 
-	initialDelay := 100 * time.Millisecond
-	maxDelay := 10 * time.Second         
-	factor := 2.0     
-                     
+    initialDelay := 100 * time.Millisecond
+    maxDelay := 10 * time.Second
+    factor := 2.0
+
     for retries := 0; retries <= s.maxRetries; retries++ {
-        trans, err := gosmpp.NewSession(
-            gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
-            gosmpp.Settings{
-				EnquireLink: 5 * time.Second,
-				ReadTimeout: 10 * time.Second,
+        select {
+        case <-s.ctx.Done():
+            return fmt.Errorf("context cancelled during session creation")
+        default:
+            trans, err := gosmpp.NewSession(
+                gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
+                gosmpp.Settings{
+                    EnquireLink: 5 * time.Second,
+					ReadTimeout: 10 * time.Second,
 
-				OnSubmitError: func(_ pdu.PDU, err error) {
-					log.Println("SubmitPDU error:", err)
+					OnSubmitError: func(_ pdu.PDU, err error) {
+						log.Println("SubmitPDU error:", err)
+					},
+
+					OnReceivingError: func(err error) {
+						fmt.Println("Receiving PDU/Network error:", err)
+					},
+
+					OnRebindingError: func(err error) {
+						fmt.Println("Rebinding error:", err)
+					},
+
+					OnAllPDU: handlePDU(s),
+
+					OnClosed: func(state gosmpp.State) {
+						fmt.Println(state)
+					},
 				},
+				5*time.Second,
+            )
 
-				OnReceivingError: func(err error) {
-					fmt.Println("Receiving PDU/Network error:", err)
-				},
+            if err == nil {
+                s.transceiver = trans
+                return nil
+            }
 
-				OnRebindingError: func(err error) {
-					fmt.Println("Rebinding error:", err)
-				},
+            delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
+            log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
 
-				OnAllPDU: handlePDU(s),
+            if strings.Contains(err.Error(), "connect: connection refused") {
+                log.Printf("Connection refused. Ensure the SMSC server is running and accessible on %s\n", cfg.SMSC)
+            }
 
-				OnClosed: func(state gosmpp.State) {
-					fmt.Println(state)
-				},
-			}, 5*time.Second)
-
-		if err == nil {
-		s.transceiver = trans
-		return nil
-		}
-
-		delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-		log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
-		time.Sleep(delay)
-	}
+            time.Sleep(delay)
+        }
+    }
 	return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
 }
 
-func (s *Session) Send(number string, message string) error {
-    submitSM := newSubmitSM(number, message)
+func (s *Session) Send(sender, number, message string) error {
+    submitSM := newSubmitSM(sender, number, message)
+	ref := submitSM.SequenceNumber
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Status[ref] = &MessageStatus{
+		// DreamsMessageID: dreamsMessageId,
+		Number: number,
+	}
+
     s.outstandingCh <- struct{}{}
     err := s.transceiver.Transceiver().Submit(submitSM)
     fmt.Println("SubmitSM: " + message)
@@ -117,11 +143,13 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         case *pdu.UnbindResp:
             // fmt.Println("UnbindResp Received")
         case *pdu.SubmitSMResp:
-			// push to s.MessageIDs
+            <-s.outstandingCh
 			msgID := pd.MessageID
-			s.MessageIDs = append(s.MessageIDs, msgID)
-			fmt.Println("SubmitSMResp Received", msgID)
-            // <-s.outstandingCh
+			ref := pd.SequenceNumber
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.Status[ref].MessageID = msgID
+			s.Status[ref].Status = "pending"
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
             // fmt.Println("GenericNack Received")
@@ -134,19 +162,17 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
             // fmt.Println("DataSM Received")
             return pd.GetResponse(), false
         case *pdu.DeliverSM:
-            // fmt.Println("OutstandingCh elements: ", len(s.outstandingCh))
-            <-s.outstandingCh
 			return s.handleDeliverSM(pd)
         }
         return nil, false
     }
 }
 
-func newSubmitSM(number, message string) *pdu.SubmitSM {
+func newSubmitSM(sender, number, message string) *pdu.SubmitSM {
     srcAddr := pdu.NewAddress()
     srcAddr.SetTon(5)
     srcAddr.SetNpi(0)
-    _ = srcAddr.SetAddress("00" + "522241")
+    _ = srcAddr.SetAddress(sender)
 
     destAddr := pdu.NewAddress()
     destAddr.SetTon(1)
@@ -171,24 +197,36 @@ func (s *Session) handleDeliverSM(pd *pdu.DeliverSM) (pdu.PDU, bool) {
 		log.Fatal(err)
 	}
 
+	// receiver := pd.DestAddr.Address()
+
+
 	totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
-	log.Println("Reference:", reference)
+	// udh:= pd.Message.UDH()
+	// log.Printf("udh: %v", udh)
 
 	if found {
 		return s.handleConcatenatedSMS(reference, message, totalParts, sequence, pd)
 	}
-	id := ""
-	result := strings.Split(message, "id:")
+	msgID := ""
+	result := strings.Split(message, "msgID:")
 	if len(result) > 1 {
-		id = result[1]
+		msgID = result[1]
 	}
-	result = strings.Split(id, " ")
+	result = strings.Split(msgID, " ")
 	if len(result) > 1 {
-		id = result[0]
+		msgID = result[0]
+		ref := pd.SequenceNumber
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if _, ok := s.Status[ref]; ok {
+			if s.Status[ref].MessageID == msgID {
+				s.Status[ref].Status = "sent"
+			} else {
+				// push deliver status to queue to 
+				
+			}
+		}
 	}
-
-	log.Println("Your msg id:", id)
-
 	return pd.GetResponse(), false
 }
 
