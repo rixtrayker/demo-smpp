@@ -1,117 +1,189 @@
 package state
 
 import (
-    "context"
-    "errors"
-    "sync"
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"sync"
+	"time"
 )
 
 type State struct {
-    mutex   *sync.Mutex
-    ctx     context.Context
-    cancels map[string]*context.CancelFunc
-    state   int
+	mutex     *sync.RWMutex
+	ctx       context.Context
+	cancelFn  context.CancelFunc
+	cancels   map[string]*context.CancelFunc
+	state     int
+	stateTime time.Time
 }
-
-const (
-    Stopped = iota
-    Paused
-    Running
-    Restarting
-)
 
 func NewState(ctx context.Context) (*State, error) {
-    if ctx == nil {
-        return nil, errors.New("context cannot be nil")
-    }
-    return &State{
-        mutex:   &sync.Mutex{},
-        ctx:     ctx,
-        cancels: map[string]*context.CancelFunc{},
-        state:   Stopped,
-    }, nil
+	if ctx == nil {
+		return nil, errors.New("context cannot be nil")
+	}
+	ctx, cancelFn := context.WithCancel(ctx)
+	return &State{
+		mutex:     &sync.RWMutex{},
+		ctx:       ctx,
+		cancelFn:  cancelFn,
+		cancels:   map[string]*context.CancelFunc{},
+		state:     New,
+		stateTime: time.Now(),
+	}, nil
 }
 
-func (s *State) Start() {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
+func (s *State) Start() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
-    if s.state == Stopped {
-        s.state = Running
-        // Create a new context with cancellation for this specific client
-        ctx, cancel := context.WithCancel(s.ctx)
-        s.cancels["client"] = &cancel
-    }
+	switch s.state {
+	case New, Stopped, Restarting:
+		s.state = Running
+		s.stateTime = time.Now()
+		_, cancel := context.WithCancel(s.ctx)
+		s.cancels["client"] = &cancel
+		log.Printf("Started at %v", s.stateTime)
+		return nil
+	case Running:
+		return errors.New("already running")
+	case Terminating:
+		return errors.New("terminating, cannot start")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
 }
 
-func (s *State) Stop() {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
+func (s *State) Stop() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
-    if s.state == Running {
-        s.state = Stopped
-        if cancel, ok := s.cancels["client"]; ok {
-            (*cancel)() // Call the cancellation function for the client context
-            delete(s.cancels, "client")
-        }
-    }
+	switch s.state {
+	case Running:
+		s.state = Stopped
+		s.stateTime = time.Now()
+		if cancel, ok := s.cancels["client"]; ok {
+			(*cancel)()
+			delete(s.cancels, "client")
+		}
+		log.Printf("Stopped at %v", s.stateTime)
+		return nil
+	case Stopped, New:
+		return errors.New("already stopped")
+	case Terminating:
+		return errors.New("terminating, cannot stop")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
 }
 
-func (s *State) Restart() {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
+func (s *State) Restart() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
-    if s.state == Running {
-        s.state = Restarting
-        if cancel, ok := s.cancels["client"]; ok {
-            (*cancel)() // Cancel the existing context before restarting
-            delete(s.cancels, "client")
-        }
-        // Create a new context with cancellation for the restarted client
-        ctx, cancel := context.WithCancel(s.ctx)
-        s.cancels["client"] = &cancel
-        s.state = Running
-    }
+	switch s.state {
+	case Running:
+		s.state = Restarting
+		s.stateTime = time.Now()
+		if cancel, ok := s.cancels["client"]; ok {
+			(*cancel)()
+			delete(s.cancels, "client")
+		}
+		_, cancel := context.WithCancel(s.ctx)
+		s.cancels["client"] = &cancel
+		s.state = Running
+		log.Printf("Restarted at %v", s.stateTime)
+		return nil
+	case Stopped, New:
+		return s.Start()
+	case Terminating:
+		return errors.New("terminating, cannot restart")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
 }
+
+func (s *State) Terminate() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	switch s.state {
+	case Running, Paused, Restarting:
+		s.state = Terminating
+		s.stateTime = time.Now()
+		if cancel, ok := s.cancels["client"]; ok {
+			(*cancel)()
+			delete(s.cancels, "client")
+		}
+		s.cancelFn() // Cancel the main context
+		log.Printf("Terminating at %v", s.stateTime)
+		return nil
+	case Terminated:
+		return errors.New("already terminated")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
+}
+
+func (s *State) Pause() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	switch s.state {
+	case Running:
+		s.state = Paused
+		s.stateTime = time.Now()
+		log.Printf("Paused at %v", s.stateTime)
+		return nil
+	case Paused:
+		return errors.New("already paused")
+	case Terminating:
+		return errors.New("terminating, cannot pause")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
+}
+
+func (s *State) Resume() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	switch s.state {
+	case Paused:
+		s.state = Running
+		s.stateTime = time.Now()
+		log.Printf("Resumed at %v", s.stateTime)
+		return nil
+	case Running:
+		return errors.New("already running")
+	case Terminating:
+		return errors.New("terminating, cannot resume")
+	default:
+		return fmt.Errorf("invalid state transition from %s", stateNames[s.state])
+	}
+}
+
 
 func (s *State) IsRunning() bool {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-
-    return s.state == Running
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.state == Running
 }
 
-func (s *State) IsRestarting() bool {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-
-    return s.state == Restarting
+func (s *State) IsPaused() bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.state == Paused
 }
 
-// WrapWork is a helper function to be embedded in client functions
-// It checks the  state and cancels the client context if necessary.
-func (s *State) WrapWork(fn func(context.Context)) func() error {
-    return func() error {
-        s.mutex.Lock()
-        defer s.mutex.Unlock()
+func (s *State) IsTerminating() bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.state == Terminating
+}
 
-        if s.state != Running {
-            return errors.New(" is not running")
-        }
-
-        ctx, cancel := context.WithCancel(s.ctx)
-        defer cancel() // Ensure cancellation when the function exits
-
-        go func() {
-            select {
-            case <-ctx.Done():
-            case <-s.ctx.Done():
-                cancel() // Cancel the client context if the  context is done
-            }
-        }()
-
-        fn(ctx) // Execute the actual work function with the client context
-
-        return nil
-    }
+func (s *State) GetState() (int, time.Time) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.state, s.stateTime
 }
