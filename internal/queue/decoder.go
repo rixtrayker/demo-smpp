@@ -2,7 +2,6 @@ package queue
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	// "google.golang.org/protobuf/proto"
 )
@@ -18,8 +17,13 @@ func NewDecoder() *Decoder {
     return &Decoder{}
 }
 
-func (d *Decoder) DecodeJSON(data []byte) (interface{}, error) {
-    return d.Decode(data, FormatJSON)
+func (d *Decoder) DecodeJSON(data []byte) (QueueMessage, error) {
+    result, err := d.Decode(data, FormatJSON)
+    if err != nil {
+        return QueueMessage{}, err
+    }
+    return result.(QueueMessage), nil
+
 }
 
 
@@ -32,17 +36,25 @@ func (d *Decoder) Decode(data []byte, format Format) (interface{}, error) {
     //         return nil, fmt.Errorf("failed to decode protobuf message: %w", err)
     //     }
     //     return msg, nil
-    case FormatJSON:
+    default:
         var msg QueueMessage
         err := json.Unmarshal(data, &msg)
         if err != nil {
             return nil, fmt.Errorf("failed to decode JSON message: %w", err)
         }
         return msg, nil
-    default:
-        return nil, errors.New("unsupported format")
     }
 }
+
+// func (d *Decoder) DecodeJSON(data []byte) (QueueMessage, error) {
+//     var msg QueueMessage
+//     err := json.Unmarshal(data, &msg)
+//     if err != nil {
+//         return QueueMessage{}, fmt.Errorf("failed to decode JSON message: %w", err)
+//     }
+//     return msg, nil
+// }
+
 
 type Format string
 
@@ -53,6 +65,7 @@ const (
 
 type QueueMessage struct {
     Provider    string `json:"provider"`
+    Sender      string `json:"sender"`
     PhoneNumber string `json:"phone_number"`
     Text        string `json:"text"`
 }
