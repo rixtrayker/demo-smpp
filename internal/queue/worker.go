@@ -1,4 +1,4 @@
-package worker
+package queue
 
 import (
 	"context"
@@ -66,41 +66,6 @@ func (w *Worker) Stop() {
     
 }
 
-func (w *Worker) start(ctx context.Context, wg *sync.WaitGroup) {
-    defer wg.Done()
-
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        default:
-            data, err := w.Consume(ctx)
-            if err != nil {
-                w.errors <- err
-                continue
-            }
-
-			msg, err := w.decoder.DecodeJSON(data)
-			if err != nil {
-				w.errors <- err
-				continue
-			}
-
-			if jsonMsg, ok := msg.(JSONMessage); ok {
-				go func() {
-					err = w.processMessage(ctx, jsonMsg)
-					if err != nil {
-						w.errors <- err
-					}
-				}()
-			} else {
-				w.errors <- errors.New("invalid message type")
-			}
-        }
-    }
-}
-
-
 func (w *Worker) Consume(ctx context.Context) ([]byte, error) {
 	result, err := w.redis.BLPop(ctx, 0, "queue:go-queue-testing").Result()
 	if err != nil {
@@ -111,10 +76,9 @@ func (w *Worker) Consume(ctx context.Context) ([]byte, error) {
 }
 
 
-func (w *Worker) processMessage(ctx context.Context, msg JSONMessage) error {
-	err := w.session.Send(msg.PhoneNumber, msg.Text)
-	return err
-}
+// func (w *Worker) processMessage(process func (context.Context, QueueMessage) error) error {
+//     return process(ctx, msg)
+// }
 
 func (w *Worker) Close() error {
 	err := w.redis.Close()

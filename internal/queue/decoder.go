@@ -1,16 +1,15 @@
-package worker
+package queue
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"google.golang.org/protobuf/proto"
+	// "google.golang.org/protobuf/proto"
 )
 
-type Message interface {
-    proto.Message
-}
+// type Message interface {
+//     proto.Message
+// }
 
 type Decoder struct {
 }
@@ -26,15 +25,15 @@ func (d *Decoder) DecodeJSON(data []byte) (interface{}, error) {
 
 func (d *Decoder) Decode(data []byte, format Format) (interface{}, error) {
     switch format {
-    case FormatProtobuf:
-        var msg proto.Message
-        err := proto.Unmarshal(data, msg)
-        if err != nil {
-            return nil, fmt.Errorf("failed to decode protobuf message: %w", err)
-        }
-        return msg, nil
+    // case FormatProtobuf:
+    //     var msg proto.Message
+    //     err := proto.Unmarshal(data, msg)
+    //     if err != nil {
+    //         return nil, fmt.Errorf("failed to decode protobuf message: %w", err)
+    //     }
+    //     return msg, nil
     case FormatJSON:
-        var msg JSONMessage
+        var msg QueueMessage
         err := json.Unmarshal(data, &msg)
         if err != nil {
             return nil, fmt.Errorf("failed to decode JSON message: %w", err)
@@ -45,7 +44,6 @@ func (d *Decoder) Decode(data []byte, format Format) (interface{}, error) {
     }
 }
 
-// Format defines the expected message format (Protobuf or JSON)
 type Format string
 
 const (
@@ -53,8 +51,7 @@ const (
     FormatJSON     Format = "json"
 )
 
-// JSONMessage represents a message in JSON format
-type JSONMessage struct {
+type QueueMessage struct {
     Provider    string `json:"provider"`
     PhoneNumber string `json:"phone_number"`
     Text        string `json:"text"`
