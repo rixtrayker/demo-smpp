@@ -15,6 +15,23 @@ type DlrResponse struct {
 	Company  string `gorm:"size:255"`
 }
 
+
+func (DlrResponse) TableName() string {
+    return "dlr_response"
+}
+
+func (DlrSms) TableName() string {
+	return "dlr_sms"
+}
+
+func (ErrorLog) TableName() string {
+	return "error_log"
+}
+
+func (FailedJob) TableName() string {
+	return "failed_jobs"
+}
+
 type DlrSms struct {
 	ID           int64      `gorm:"primaryKey"`
 	MessageID    string     `gorm:"size:255"`
@@ -118,26 +135,6 @@ type NumberReport struct {
 	SendAt       time.Time  `gorm:"default:NULL"`
 }
 
-type NumberReport2023061311_48 struct {
-	ID           uint64 `gorm:"primaryKey;default:0"`
-	ReportsID    int64  `gorm:"type:bigint"`
-	Number       int64  `gorm:"type:bigint"`
-	Status       int8   `gorm:"default:1"`
-	MessageID    string `gorm:"size:255"`
-	MessageState string `gorm:"size:255"`
-	ErrorCode    string `gorm:"size:255"`
-	Company      string `gorm:"size:255"`
-	Ported       string `gorm:"size:255"`
-	CountPorted  int16  `gorm:"type:smallint;default:0"`
-	Sent         int8   `gorm:"default:0"`
-	Message      string `gorm:"size:2000"`
-}
-
-type PasswordReset struct {
-	Email     string    `gorm:"primaryKey;size:191"`
-	Token     string    `gorm:"primaryKey;size:191"`
-	CreatedAt time.Time `gorm:"default:NULL"`
-}
 
 type Report struct {
 	ID                  uint64    `gorm:"primaryKey"`
