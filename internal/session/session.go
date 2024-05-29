@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/linxGnu/gosmpp"
-	"github.com/linxGnu/gosmpp/data"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/sirupsen/logrus"
 )
 
 type Session struct {
@@ -33,7 +33,6 @@ type MessageStatus struct {
 	Number string
 }
 
-// may need to pass WG to wait for all sessions to close
 func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
 	session := &Session{
 		ctx:          ctx,
@@ -102,36 +101,16 @@ func (s *Session) createSession(cfg config.Provider) error {
             }
 
             delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-            log.Printf("Failed to create session for provider: %v, error: %v\n", cfg.Name, err)
-
+			logrus.WithError(err).Errorf("Failed to create session for provider %s", cfg.Name)
             if strings.Contains(err.Error(), "connect: connection refused") {
-                log.Printf("Connection refused. Ensure the SMSC server is running and accessible on %s\n", cfg.SMSC)
+				logrus.WithError(err).Errorf("Connection refused. Ensure the SMSC server is running and accessible on %s", cfg.SMSC)
             }
 
             time.Sleep(delay)
         }
     }
+
 	return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
-}
-
-func (s *Session) Send(sender, number, message string) error {
-    submitSM := newSubmitSM(sender, number, message)
-	ref := submitSM.SequenceNumber
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Status[ref] = &MessageStatus{
-		// DreamsMessageID: dreamsMessageId,
-		Number: number,
-	}
-
-    s.outstandingCh <- struct{}{}
-    err := s.transceiver.Transceiver().Submit(submitSM)
-    fmt.Println("SubmitSM: " + message)
-    if err != nil {
-        log.Println("SubmitPDU error:", err)
-    }
-
-    return nil
 }
 
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
@@ -166,95 +145,6 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         }
         return nil, false
     }
-}
-
-func newSubmitSM(sender, number, message string) *pdu.SubmitSM {
-    srcAddr := pdu.NewAddress()
-    srcAddr.SetTon(5)
-    srcAddr.SetNpi(0)
-    _ = srcAddr.SetAddress(sender)
-
-    destAddr := pdu.NewAddress()
-    destAddr.SetTon(1)
-    destAddr.SetNpi(1)
-    _ = destAddr.SetAddress(number)
-
-    submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
-    submitSM.SourceAddr = srcAddr
-    submitSM.DestAddr = destAddr
-    _ = submitSM.Message.SetMessageWithEncoding(message, data.UCS2)
-    submitSM.ProtocolID = 0
-    submitSM.RegisteredDelivery = 1
-    submitSM.ReplaceIfPresentFlag = 0
-    submitSM.EsmClass = 0
-
-    return submitSM
-}
-
-func (s *Session) handleDeliverSM(pd *pdu.DeliverSM) (pdu.PDU, bool) {
-	message, err := pd.Message.GetMessage()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// receiver := pd.DestAddr.Address()
-
-
-	totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
-	// udh:= pd.Message.UDH()
-	// log.Printf("udh: %v", udh)
-
-	if found {
-		return s.handleConcatenatedSMS(reference, message, totalParts, sequence, pd)
-	}
-	msgID := ""
-	result := strings.Split(message, "msgID:")
-	if len(result) > 1 {
-		msgID = result[1]
-	}
-	result = strings.Split(msgID, " ")
-	if len(result) > 1 {
-		msgID = result[0]
-		ref := pd.SequenceNumber
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if _, ok := s.Status[ref]; ok {
-			if s.Status[ref].MessageID == msgID {
-				s.Status[ref].Status = "sent"
-			} else {
-				// push deliver status to queue to 
-				
-			}
-		}
-	}
-	return pd.GetResponse(), false
-}
-
-func (s *Session) handleConcatenatedSMS(reference uint8, message string, totalParts, sequence byte, pd *pdu.DeliverSM) (pdu.PDU, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.concatenated[reference]; !ok {
-		s.concatenated[reference] = make([]string, totalParts)
-	}
-
-	s.concatenated[reference][sequence-1] = message
-
-	if isConcatenatedDone(s.concatenated[reference], totalParts) {
-		log.Println(strings.Join(s.concatenated[reference], ""))
-		delete(s.concatenated, reference)
-	}
-
-	return pd.GetResponse(), false
-}
-
-func isConcatenatedDone(parts []string, total byte) bool {
-	for _, part := range parts {
-		if part == "" {
-			total--
-		}
-	}
-	return total == 0
 }
 
 func (s *Session) Close() {
