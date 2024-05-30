@@ -11,6 +11,7 @@ import (
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,6 +25,7 @@ type Session struct {
 	concatenated map[uint8][]string
 	Status map[int32]*MessageStatus
 	maxRetries    int
+	responseWriter *response.ResponseWriter
 }
 
 type MessageStatus struct {
@@ -33,20 +35,21 @@ type MessageStatus struct {
 	Number string
 }
 
-func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool)) (*Session, error) {
-	session := &Session{
-		ctx:          ctx,
-		concatenated: make(map[uint8][]string),
-		handler:      handler,
-		maxRetries:     cfg.MaxRetries,
-		maxOutstanding: cfg.MaxOutStanding,
-        outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
-		Status: make(map[int32]*MessageStatus),
-	}
-	err := session.createSession(cfg)
-	if err != nil {
-		return nil, err
-	}
+func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool),rw response.ResponseWriter) (*Session, error) {
+		session := &Session{
+			ctx:          ctx,
+			concatenated: make(map[uint8][]string),
+			handler:      handler,
+			maxRetries:     cfg.MaxRetries,
+			maxOutstanding: cfg.MaxOutStanding,
+	        outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+			Status: make(map[int32]*MessageStatus),
+			responseWriter:  &rw,
+		}
+		err := session.createSession(cfg)
+		if err != nil {
+			return nil, err
+		}
 
 	return session, nil
 }
