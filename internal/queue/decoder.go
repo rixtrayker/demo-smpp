@@ -66,6 +66,6 @@ const (
 type QueueMessage struct {
     Provider    string `json:"provider"`
     Sender      string `json:"sender"`
-    PhoneNumber string `json:"phone_number"`
+    PhoneNumbers map[int64]int64 `json:"phone_numbers"`
     Text        string `json:"text"`
 }
