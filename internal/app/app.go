@@ -12,6 +12,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/response"
 
 	// "github.com/rixtrayker/demo-smpp/internal/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/session"
@@ -49,7 +50,8 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
                 log.Println("Provider", provider.Name)
             }
 
-            sess, err := session.NewSession(ctx, provider, nil)
+            rw := response.NewResponseWriter(ctx)
+            sess, err := session.NewSession(ctx, provider, nil, rw)
             if err != nil {
                 log.Println("Failed to create session for provider", provider.Name, err)
                 return
@@ -141,7 +143,7 @@ func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
                 defer wg.Done()
                 defer func() { <-sem }()
                 msg := fmt.Sprintf("msg %d", i)
-                if err := s.Send("12345", msg); err != nil {
+                if err := s.Send("amr-test", "akdakkd", msg); err != nil {
                     log.Println("Failed to send message:", err)
                 }
             }(s, i)
