@@ -25,10 +25,10 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	auth := gosmpp.Auth{
-		SMSC:       "localhost:2775",
-		SystemID:   "169994",
-		Password:   "EDXPJU",
-		SystemType: "",
+		SMSC:       "212.118.129.200:10002",
+		SystemID:   "Bulk70245",
+		Password:   "aJvB_46f",
+		SystemType: "SMS0245",
 	}
 
 	trans, err := gosmpp.NewSession(
@@ -43,17 +43,17 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 			},
 
 			OnReceivingError: func(err error) {
-				// fmt.Println("Receiving PDU/Network error:", err)
+				fmt.Println("Receiving PDU/Network error:", err)
 			},
 
 			OnRebindingError: func(err error) {
-				// fmt.Println("Rebinding but error:", err)
+				fmt.Println("Rebinding but error:", err)
 			},
 
 			OnPDU: handlePDU(),
 
 			OnClosed: func(state gosmpp.State) {
-				// fmt.Println(state)
+				fmt.Println(state)
 			},
 		}, 5*time.Second)
 	if err != nil {
@@ -64,7 +64,7 @@ func sendingAndReceiveSMS(wg *sync.WaitGroup) {
 	}()
 
 	// sending SMS(s)
-	for i := 0; i < 1800; i++ {
+	for i := 0; i < 1; i++ {
 		if err = trans.Transceiver().Submit(newSubmitSM()); err != nil {
 			fmt.Println(err)
 		}
@@ -83,16 +83,16 @@ func handlePDU() func(pdu.PDU, bool) {
 			fmt.Printf("SubmitSMResp:%+v\n", pd)
 
 		case *pdu.GenericNack:
-			// fmt.Println("GenericNack Received")
+			fmt.Println("GenericNack Received")
 
 		case *pdu.EnquireLinkResp:
-			// fmt.Println("EnquireLinkResp Received")
+			fmt.Println("EnquireLinkResp Received")
 
 		case *pdu.DataSM:
-			// fmt.Printf("DataSM:%+v\n", pd)
+			fmt.Printf("DataSM:%+v\n", pd)
 
 		case *pdu.DeliverSM:
-			// fmt.Printf("DeliverSM:%+v\n", pd)
+			fmt.Printf("DeliverSM:%+v\n", pd)
 			// log reference number
 			// region concatenated sms (sample code)
 			message, err := pd.Message.GetMessage()
@@ -130,17 +130,17 @@ func newSubmitSM() *pdu.SubmitSM {
 	srcAddr := pdu.NewAddress()
 	srcAddr.SetTon(5)
 	srcAddr.SetNpi(0)
-	_ = srcAddr.SetAddress("00" + "522241")
+	_ = srcAddr.SetAddress("dreams")
 
 	destAddr := pdu.NewAddress()
 	destAddr.SetTon(1)
 	destAddr.SetNpi(1)
-	_ = destAddr.SetAddress("99" + "522241")
+	_ = destAddr.SetAddress("966554571143")
 
 	submitSM := pdu.NewSubmitSM().(*pdu.SubmitSM)
 	submitSM.SourceAddr = srcAddr
 	submitSM.DestAddr = destAddr
-	_ = submitSM.Message.SetMessageWithEncoding("Đừng buồn thế dù ngoài kia vẫn mưa nghiễng rợi tý tỵ", data.UCS2)
+	_ = submitSM.Message.SetMessageWithEncoding("Testing go-lang", data.UCS2)
 	submitSM.ProtocolID = 0
 	submitSM.RegisteredDelivery = 1
 	submitSM.ReplaceIfPresentFlag = 0
