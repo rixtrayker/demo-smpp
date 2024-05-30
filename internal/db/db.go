@@ -18,8 +18,14 @@ var (
 	once   sync.Once
 )
 
-func connect(ctx context.Context, cfg config.DatabaseConfig) error {
+func connect(ctx context.Context) error {
 	var err error
+	cfg := config.LoadConfig().DatabaseConfig
+
+	if cfg == (config.DatabaseConfig{}) {
+		return errors.New("DB config is empty")
+	}
+
 	once.Do(func() {
 		dataSourceName := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=true&parseTime=true",
 			cfg.User,
@@ -34,6 +40,7 @@ func connect(ctx context.Context, cfg config.DatabaseConfig) error {
 			err = fmt.Errorf("failed to connect to database: %w", err)
 			return
 		}
+		DB.WithContext(ctx)
 		sqlDB, err := DB.DB()
 		if err != nil {
 			err = fmt.Errorf("failed to get underlying sql.DB: %w", err)
@@ -48,8 +55,8 @@ func connect(ctx context.Context, cfg config.DatabaseConfig) error {
 	return err
 }
 
-func GetDBInstance(ctx context.Context, cfg config.DatabaseConfig) (*gorm.DB, error) {
-	err := connect(ctx, cfg)
+func GetDBInstance(ctx context.Context) (*gorm.DB, error) {
+	err := connect(ctx)
 	if err != nil {
 		return nil, err
 	}
