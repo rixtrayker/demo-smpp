@@ -2,6 +2,7 @@ package response
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/rixtrayker/demo-smpp/internal/db"
 	"github.com/sirupsen/logrus"
@@ -51,7 +52,6 @@ func (w *Writer) writeLog(msg dtos.ReceiveLog){
 		"MessageState": msg.MessageState,
 		"ErrorCode":    msg.ErrorCode,
 		"MobileNo":     msg.MobileNo,
-		"CurrentTime":  msg.CurrentTime,
 		"Data":         msg.Data,
 	}
 
@@ -60,12 +60,13 @@ func (w *Writer) writeLog(msg dtos.ReceiveLog){
 
 func (w *Writer) writeDB(msg dtos.ReceiveLog){
 	db := getDB(w.ctx)
+	mobileNo, _  := strconv.ParseInt(msg.MobileNo, 10, 64)
+	// todo: log error
 	dlrSms := &models.DlrSms{
 		MessageID:    msg.MessageID,
 		MessageState: msg.MessageState,
 		ErrorCode:    msg.ErrorCode,
-		MobileNo:     msg.MobileNo,
-		CurrentTime:  msg.CurrentTime,
+		MobileNo:     mobileNo,
 		Data:         msg.Data,
 	}
 	
