@@ -34,9 +34,9 @@ func (FailedJob) TableName() string {
 
 type DlrSms struct {
 	ID           int64      `gorm:"primaryKey"`
-	MessageID    string     `gorm:"size:255"`
-	MessageState string     `gorm:"size:150"`
-	ErrorCode    string     `gorm:"size:255"`
+	MessageID    string     `gorm:"column:messageId;size:255"`
+	MessageState string     `gorm:"column:messageState;size:150"`
+	ErrorCode    string     `gorm:"column:errorCode;size:255"`
 	MobileNo     int64      `gorm:"type:bigint"`
 	CurrentTime  time.Time  `gorm:"default:CURRENT_TIMESTAMP"`
 	Data         string     `gorm:"type:text"`
