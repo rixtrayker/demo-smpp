@@ -51,9 +51,10 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
             }
 
             rw := response.NewResponseWriter(ctx)
-            sess, err := session.NewSession(ctx, provider, nil, rw)
+            sess := session.NewSession(provider, nil, rw)
+            err := sess.StartSession(provider)
             if err != nil {
-                log.Println("Failed to create session for provider", provider.Name, err)
+                log.Println("app.go Failed to create session for provider", provider.Name, err)
                 return
             }
             if sess != nil {
@@ -74,7 +75,7 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
         <-ctx.Done()
         log.Println("Main cancelled, stopping worker, ctx.Done()")
         for _, s := range appSessions {
-            s.Close()
+            s.Stop()
         }
         wg.Done()
     }()

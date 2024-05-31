@@ -1,31 +1,32 @@
 package session
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
 )
 
 type Session struct {
 	transceiver   *gosmpp.Session
-	ctx           context.Context
 	maxOutstanding int
 	outstandingCh chan struct{}
 	mu            sync.Mutex
 	handler       func(pdu.PDU) (pdu.PDU, bool)
+	stop chan struct{}
 	concatenated map[uint8][]string
 	Status map[int32]*MessageStatus
 	maxRetries    int
-	responseWriter *response.ResponseWriter
+	responseWriter *response.Writer
+	wg 				sync.WaitGroup
+	notCancelled bool
 }
 
 type MessageStatus struct {
@@ -35,26 +36,24 @@ type MessageStatus struct {
 	Number string
 }
 
-func NewSession(ctx context.Context,cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool),rw response.ResponseWriter) (*Session, error) {
-		session := &Session{
-			ctx:          ctx,
-			concatenated: make(map[uint8][]string),
-			handler:      handler,
-			maxRetries:     cfg.MaxRetries,
-			maxOutstanding: cfg.MaxOutStanding,
-	        outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
-			Status: make(map[int32]*MessageStatus),
-			responseWriter:  &rw,
-		}
-		err := session.createSession(cfg)
-		if err != nil {
-			return nil, err
-		}
+func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool),rw *response.Writer) *Session {
+	session := &Session{
+		concatenated: make(map[uint8][]string),
+		handler:      handler,
+		maxRetries:     cfg.MaxRetries,
+		maxOutstanding: cfg.MaxOutStanding,
+		outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+		stop: make(chan struct{}),
+		Status: make(map[int32]*MessageStatus),
+		responseWriter:  rw,
+		wg: sync.WaitGroup{},
+		notCancelled: true,
+	}
 
-	return session, nil
+	return session
 }
 
-func (s *Session) createSession(cfg config.Provider) error {
+func (s *Session) StartSession(cfg config.Provider) error {
     auth := gosmpp.Auth{
         SMSC:       cfg.SMSC,
         SystemID:   cfg.SystemID,
@@ -68,52 +67,49 @@ func (s *Session) createSession(cfg config.Provider) error {
 
     for retries := 0; retries <= s.maxRetries; retries++ {
         select {
-        case <-s.ctx.Done():
-            return fmt.Errorf("context cancelled during session creation")
+        case <-s.stop:
+            return fmt.Errorf("session stopped")
         default:
-            trans, err := gosmpp.NewSession(
+            session, err := gosmpp.NewSession(
                 gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
                 gosmpp.Settings{
                     EnquireLink: 5 * time.Second,
-					ReadTimeout: 10 * time.Second,
+                    ReadTimeout: 10 * time.Second,
 
-					OnSubmitError: func(_ pdu.PDU, err error) {
-						log.Println("SubmitPDU error:", err)
-					},
+                    OnSubmitError: func(_ pdu.PDU, err error) {
+                        log.Println("SubmitPDU error:", err)
+                    },
 
-					OnReceivingError: func(err error) {
-						fmt.Println("Receiving PDU/Network error:", err)
-					},
+                    OnReceivingError: func(err error) {
+                        fmt.Println("Receiving PDU/Network error:", err)
+                    },
 
-					OnRebindingError: func(err error) {
-						fmt.Println("Rebinding error:", err)
-					},
+                    OnRebindingError: func(err error) {
+                        fmt.Println("Rebinding error:", err)
+                    },
 
-					OnAllPDU: handlePDU(s),
+                    OnAllPDU: handlePDU(s),
 
-					OnClosed: func(state gosmpp.State) {
-						fmt.Println(state)
-					},
-				},
-				5*time.Second,
+                    OnClosed: func(state gosmpp.State) {
+                        fmt.Println(state)
+                    },
+                },
+                5*time.Second,
             )
 
             if err == nil {
-                s.transceiver = trans
+                s.transceiver = session
                 return nil
             }
 
             delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-			logrus.WithError(err).Errorf("Failed to create session for provider %s", cfg.Name)
-            if strings.Contains(err.Error(), "connect: connection refused") {
-				logrus.WithError(err).Errorf("Connection refused. Ensure the SMSC server is running and accessible on %s", cfg.SMSC)
-            }
+            logrus.WithError(err).Errorf("session.go:Failed to create session for provider %s", cfg.Name)
 
             time.Sleep(delay)
         }
     }
 
-	return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
+    return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
 }
 
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
@@ -129,9 +125,14 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 			msgID := pd.MessageID
 			ref := pd.SequenceNumber
 			s.mu.Lock()
-			defer s.mu.Unlock()
 			s.Status[ref].MessageID = msgID
 			s.Status[ref].Status = "pending"
+			s.mu.Unlock()
+            s.responseWriter.WriteResponse(&dtos.ReceiveLog{
+                MessageID: msgID,
+                MobileNo: s.Status[ref].Number,
+                MessageState: "SubmitSMResp",
+            })
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
             // fmt.Println("GenericNack Received")
@@ -150,14 +151,13 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
     }
 }
 
-func (s *Session) Close() {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-
-    for i := 0; i < cap(s.outstandingCh); i++ {
-        s.outstandingCh <- struct{}{}
-    }
-
+func (s *Session) Stop() {
     close(s.outstandingCh)
-    s.transceiver.Close()
+    for; len(s.outstandingCh) > 0; {}
+	close(s.stop)
+	if s.transceiver != nil {
+		s.transceiver.Close()
+	}
+	s.wg.Wait()
+    s.responseWriter.Close()
 }

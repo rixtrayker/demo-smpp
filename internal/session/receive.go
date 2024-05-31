@@ -21,7 +21,8 @@ func (s *Session) handleDeliverSM(pd *pdu.DeliverSM) (pdu.PDU, bool) {
 	// udh:= pd.Message.UDH()
 	// log.Printf("udh: %v", udh)
 	
-	(*s.responseWriter).WriteResponse(PrepareResult(pd))
+	data := PrepareResult(pd)
+	(*s.responseWriter).WriteResponse(&data)
 
 	if found {
 		return s.handleConcatenatedSMS(reference, message, totalParts, sequence, pd)
@@ -86,7 +87,7 @@ func getMessageId(pd *pdu.DeliverSM) string {
 }
 
 func (s *Session) Write(rl dtos.ReceiveLog){
-	(*s.responseWriter).WriteResponse(rl)
+	(*s.responseWriter).WriteResponse(&rl)
 }
 
 func PrepareResult(pd *pdu.DeliverSM) dtos.ReceiveLog {
