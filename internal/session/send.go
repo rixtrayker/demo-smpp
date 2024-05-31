@@ -10,19 +10,21 @@ func (s *Session) Send(sender, number, message string) error {
     submitSM := newSubmitSM(sender, number, message)
 	ref := submitSM.SequenceNumber
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.Status[ref] = &MessageStatus{
 		// DreamsMessageID: dreamsMessageId,
 		Number: number,
-	}
+    }
+	s.mu.Unlock()
 
     s.outstandingCh <- struct{}{}
     err := s.transceiver.Transceiver().Submit(submitSM)
 	logrus.WithField("message", message).Info("SubmitSM")
     if err != nil {
 		logrus.WithError(err).Error("SubmitPDU error")
+        return err
     }
-
+    
+    // s.swg.Add(1)
     return nil
 }
 
@@ -49,4 +51,3 @@ func newSubmitSM(sender, number, message string) *pdu.SubmitSM {
 
     return submitSM
 }
-

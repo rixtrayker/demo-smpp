@@ -49,13 +49,13 @@ func (c * ClientBase) SetHandler(handler *handlers.Handler) {
 func (c *ClientBase) Start() {
 	c.state.Start()
 	// handlerFunc := c.handler.Handle
-	// session, err := session.NewSession(c.ctx, c.cfg, handlerFunc)
 	rw := response.NewResponseWriter(c.ctx)
-	session, err := session.NewSession(c.ctx, c.cfg, nil, rw)
+	sess := session.NewSession(c.cfg, nil, rw)
+	err := sess.StartSession(c.cfg)
 	if err != nil {
 		return
 	}
-	defer session.Close()
+	defer sess.Stop()
 
 	w, err := queue.NewWorker()
 	if err != nil {
@@ -75,7 +75,7 @@ func (c *ClientBase) Start() {
 			for _, number := range msg.PhoneNumbers {
 				go func(number int64){
 					phoneNumber := strconv.FormatInt(number, 10)
-					err = session.Send(msg.Sender, msg.Text, phoneNumber)
+					err = sess.Send(msg.Sender, msg.Text, phoneNumber)
 				}(number)
 			}
 
