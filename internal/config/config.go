@@ -36,6 +36,7 @@ type Provider struct {
     Password   string
     SystemType string
     MaxOutStanding int
+    HasOutStanding bool
     MaxRetries int
     // Port     int
     // Username string
@@ -107,6 +108,12 @@ func loadProviderConfig(provider string) Provider {
         maxRetries = globalMaxRetries
     }
 
+    hasOutStanding, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(provider + "_HAS_OUTSTANDING_LIMIT")))
+    globalOutStanding := false
+    if err != nil {
+        hasOutStanding = globalOutStanding
+    }
+
     return Provider{
         Name:           name,
         SMSC:           smsc,
@@ -114,6 +121,7 @@ func loadProviderConfig(provider string) Provider {
         Password:       password,
         SystemType:     systemType,
         MaxOutStanding: maxOutstanding,
+        HasOutStanding: hasOutStanding,
         MaxRetries:     maxRetries,
     }
 }

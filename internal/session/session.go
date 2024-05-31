@@ -17,6 +17,7 @@ import (
 type Session struct {
 	transceiver   *gosmpp.Session
 	maxOutstanding int
+    hasOutstanding bool
 	outstandingCh chan struct{}
 	mu            sync.Mutex
 	handler       func(pdu.PDU) (pdu.PDU, bool)
@@ -42,6 +43,7 @@ func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool),rw *r
 		handler:      handler,
 		maxRetries:     cfg.MaxRetries,
 		maxOutstanding: cfg.MaxOutStanding,
+        hasOutstanding: cfg.HasOutStanding,
 		outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
 		stop: make(chan struct{}),
 		Status: make(map[int32]*MessageStatus),
@@ -121,18 +123,21 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         case *pdu.UnbindResp:
             // fmt.Println("UnbindResp Received")
         case *pdu.SubmitSMResp:
-            <-s.outstandingCh
+            if s.hasOutstanding {
+                <-s.outstandingCh
+            }
 			msgID := pd.MessageID
 			ref := pd.SequenceNumber
 			s.mu.Lock()
 			s.Status[ref].MessageID = msgID
 			s.Status[ref].Status = "pending"
-			s.mu.Unlock()
             s.responseWriter.WriteResponse(&dtos.ReceiveLog{
                 MessageID: msgID,
                 MobileNo: s.Status[ref].Number,
                 MessageState: "SubmitSMResp",
             })
+			s.mu.Unlock()
+            logrus.Info("SubmitSMResp Received")
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
             // fmt.Println("GenericNack Received")

@@ -8,26 +8,25 @@ import (
 
 func (s *Session) Send(sender, number, message string) error {
     submitSM := newSubmitSM(sender, number, message)
-	ref := submitSM.SequenceNumber
-	s.mu.Lock()
-	s.Status[ref] = &MessageStatus{
-		// DreamsMessageID: dreamsMessageId,
-		Number: number,
+    logrus.Info("Sending message to ", number)
+    ref := submitSM.SequenceNumber
+    s.mu.Lock()
+    s.Status[ref] = &MessageStatus{
+        Number: number,
     }
-	s.mu.Unlock()
+    s.mu.Unlock()
 
-    s.outstandingCh <- struct{}{}
-    err := s.transceiver.Transceiver().Submit(submitSM)
-	logrus.WithField("message", message).Info("SubmitSM")
-    if err != nil {
-		logrus.WithError(err).Error("SubmitPDU error")
-        return err
+    if s.hasOutstanding {
+        s.outstandingCh <- struct{}{}
+        return s.send(submitSM)
+    } else {
+        return s.send(submitSM)
     }
-    
-    // s.swg.Add(1)
-    return nil
 }
 
+func (s *Session) send(submitSM *pdu.SubmitSM) error{
+    return s.transceiver.Transceiver().Submit(submitSM)
+}
 
 func newSubmitSM(sender, number, message string) *pdu.SubmitSM {
     srcAddr := pdu.NewAddress()
