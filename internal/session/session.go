@@ -15,44 +15,70 @@ import (
 )
 
 type Session struct {
-	transceiver   *gosmpp.Session
-	maxOutstanding int
+    transceiver    *gosmpp.Session
+    maxOutstanding int
     hasOutstanding bool
-	outstandingCh chan struct{}
-	mu            sync.Mutex
-	handler       func(pdu.PDU) (pdu.PDU, bool)
-	stop chan struct{}
-	concatenated map[uint8][]string
-	Status map[int32]*MessageStatus
-	maxRetries    int
-	responseWriter *response.Writer
-	wg 				sync.WaitGroup
-	notCancelled bool
+    outstandingCh  chan struct{}
+    mu             sync.Mutex
+    handler        func(pdu.PDU) (pdu.PDU, bool)
+    stop           chan struct{}
+    concatenated   map[uint8][]string
+    Status         map[int32]*MessageStatus
+    maxRetries     int
+    responseWriter *response.Writer
+    wg             sync.WaitGroup
+    notCancelled   bool
 }
 
 type MessageStatus struct {
-	DreamsMessageID int
-	MessageID string
-	Status string
-	Number string
+    DreamsMessageID int
+    MessageID       string
+    Status          string
+    Number          string
 }
 
-func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool),rw *response.Writer) *Session {
-	session := &Session{
-		concatenated: make(map[uint8][]string),
-		handler:      handler,
-		maxRetries:     cfg.MaxRetries,
-		maxOutstanding: cfg.MaxOutStanding,
-        hasOutstanding: cfg.HasOutStanding,
-		outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
-		stop: make(chan struct{}),
-		Status: make(map[int32]*MessageStatus),
-		responseWriter:  rw,
-		wg: sync.WaitGroup{},
-		notCancelled: true,
-	}
+type Option func(*Session)
 
-	return session
+func WithMaxOutstanding(maxOutstanding int) Option {
+    return func(s *Session) {
+        s.maxOutstanding = maxOutstanding
+    }
+}
+
+func WithHasOutstanding(hasOutstanding bool) Option {
+    return func(s *Session) {
+        s.hasOutstanding = hasOutstanding
+    }
+}
+
+func WithMaxRetries(maxRetries int) Option {
+    return func(s *Session) {
+        s.maxRetries = maxRetries
+    }
+}
+
+func WithResponseWriter(responseWriter *response.Writer) Option {
+    return func(s *Session) {
+        s.responseWriter = responseWriter
+    }
+}
+
+func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool), options ...Option) *Session {
+    session := &Session{
+        concatenated:   make(map[uint8][]string),
+        handler:        handler,
+        outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+        stop:           make(chan struct{}),
+        Status:         make(map[int32]*MessageStatus),
+        wg:             sync.WaitGroup{},
+        notCancelled:   true,
+    }
+
+    for _, option := range options {
+        option(session)
+    }
+
+    return session
 }
 
 func (s *Session) StartSession(cfg config.Provider) error {
@@ -75,26 +101,15 @@ func (s *Session) StartSession(cfg config.Provider) error {
             session, err := gosmpp.NewSession(
                 gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
                 gosmpp.Settings{
-                    EnquireLink: 5 * time.Second,
-                    ReadTimeout: 10 * time.Second,
-
-                    OnSubmitError: func(_ pdu.PDU, err error) {
-                        log.Println("SubmitPDU error:", err)
-                    },
-
-                    OnReceivingError: func(err error) {
-                        fmt.Println("Receiving PDU/Network error:", err)
-                    },
-
-                    OnRebindingError: func(err error) {
-                        fmt.Println("Rebinding error:", err)
-                    },
-
+                    EnquireLink:  5 * time.Second,
+                    ReadTimeout:  10 * time.Second,
+                    OnSubmitError: s.handleSubmitError,
+                    OnReceivingError: s.handleReceivingError,
+                    OnRebindingError: s.handleRebindingError,
+                    // OnAllPDU: s.handler,
                     OnAllPDU: handlePDU(s),
 
-                    OnClosed: func(state gosmpp.State) {
-                        fmt.Println(state)
-                    },
+                    OnClosed: s.handleClosed,
                 },
                 5*time.Second,
             )
@@ -114,6 +129,22 @@ func (s *Session) StartSession(cfg config.Provider) error {
     return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
 }
 
+func (s *Session) handleSubmitError(p pdu.PDU, err error) {
+    log.Println("SubmitPDU error:", err)
+}
+
+func (s *Session) handleReceivingError(err error) {
+    fmt.Println("Receiving PDU/Network error:", err)
+}
+
+func (s *Session) handleRebindingError(err error) {
+    fmt.Println("Rebinding error:", err)
+}
+
+func (s *Session) handleClosed(state gosmpp.State) {
+    fmt.Println(state)
+}
+
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
     return func(p pdu.PDU) (pdu.PDU, bool) {
         switch pd := p.(type) {
@@ -126,17 +157,17 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
             if s.hasOutstanding {
                 <-s.outstandingCh
             }
-			msgID := pd.MessageID
-			ref := pd.SequenceNumber
-			s.mu.Lock()
-			s.Status[ref].MessageID = msgID
-			s.Status[ref].Status = "pending"
+            msgID := pd.MessageID
+            ref := pd.SequenceNumber
+            s.mu.Lock()
+            s.Status[ref].MessageID = msgID
+            s.Status[ref].Status = "pending"
             s.responseWriter.WriteResponse(&dtos.ReceiveLog{
-                MessageID: msgID,
-                MobileNo: s.Status[ref].Number,
+                MessageID:    msgID,
+                MobileNo:     s.Status[ref].Number,
                 MessageState: "SubmitSMResp",
             })
-			s.mu.Unlock()
+            s.mu.Unlock()
             logrus.Info("SubmitSMResp Received")
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
@@ -150,7 +181,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
             // fmt.Println("DataSM Received")
             return pd.GetResponse(), false
         case *pdu.DeliverSM:
-			return s.handleDeliverSM(pd)
+            return s.handleDeliverSM(pd)
         }
         return nil, false
     }
@@ -158,11 +189,12 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 func (s *Session) Stop() {
     close(s.outstandingCh)
-    for; len(s.outstandingCh) > 0; {}
-	close(s.stop)
-	if s.transceiver != nil {
-		s.transceiver.Close()
-	}
-	s.wg.Wait()
+    for len(s.outstandingCh) > 0 {
+    }
+    close(s.stop)
+    if s.transceiver != nil {
+        s.transceiver.Close()
+    }
+    s.wg.Wait()
     s.responseWriter.Close()
 }
