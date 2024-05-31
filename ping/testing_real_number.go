@@ -77,7 +77,7 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
 
 
     rw := response.NewResponseWriter(ctx)
-    sess := session.NewSession(cfg, nil, rw)
+    sess := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
     var err error
     select{
     case <-ctx.Done():

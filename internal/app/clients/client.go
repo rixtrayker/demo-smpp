@@ -50,7 +50,7 @@ func (c *ClientBase) Start() {
 	c.state.Start()
 	// handlerFunc := c.handler.Handle
 	rw := response.NewResponseWriter(c.ctx)
-	sess := session.NewSession(c.cfg, nil, rw)
+	sess := session.NewSession(c.cfg, nil, session.WithResponseWriter(rw))
 	err := sess.StartSession(c.cfg)
 	if err != nil {
 		return

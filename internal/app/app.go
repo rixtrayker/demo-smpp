@@ -51,7 +51,7 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
             }
 
             rw := response.NewResponseWriter(ctx)
-            sess := session.NewSession(provider, nil, rw)
+            sess := session.NewSession(provider, nil, session.WithResponseWriter(rw))
             err := sess.StartSession(provider)
             if err != nil {
                 log.Println("app.go Failed to create session for provider", provider.Name, err)
@@ -130,9 +130,9 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 
 func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
 
-    fmt.Println("Sending 1800 messages")
+    fmt.Println("Sending 1200 messages")
     sem := make(chan struct{}, 1000)
-    for i := 0; i < 1800; i++ {
+    for i := 0; i < 1200; i++ {
       select {
       case <-ctx.Done():
         log.Println("Stopping message sending")
