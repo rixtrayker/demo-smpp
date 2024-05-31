@@ -9,9 +9,10 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/rixtrayker/demo-smpp/internal/app"
+	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/db"
 	"github.com/rixtrayker/demo-smpp/internal/models"
-	"github.com/rixtrayker/demo-smpp/ping"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -24,15 +25,14 @@ func main() {
 		logrus.Fatal("Error loading .env file")
 	}
 
-	// cfg := config.LoadConfig()
+	cfg := config.LoadConfig()
 	// if its empty stop the program
 	// Channel to receive shutdown signals
 	quit := make(chan os.Signal, 1)
 	// Notify on SIGINT (CTRL+C) and SIGTERM (termination signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	ctx := context.Background()
-	// ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -42,7 +42,8 @@ func main() {
 
 		<-quit
 		logrus.Println("Shutting down gracefully...")
-		// cancel()
+
+		cancel()
 	}()
 
 	myDb, err = db.GetDBInstance(ctx)
@@ -54,8 +55,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ping.TestLive(ctx, &wg)
-	// app.StartWorker(ctx, &cfg)
+		app.StartWorker(ctx, &cfg)
 	}()
 
 	wg.Wait()
