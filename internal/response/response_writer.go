@@ -3,6 +3,7 @@ package response
 import (
 	"context"
 	"strconv"
+	"sync"
 
 	"github.com/rixtrayker/demo-smpp/internal/db"
 	"github.com/sirupsen/logrus"
@@ -23,30 +24,39 @@ type ResponseWriter interface {
 type Writer struct{
 	ctx context.Context
 	Db *gorm.DB
+	logger *logrus.Logger
+	wg sync.WaitGroup
 }
 
 func NewResponseWriter(ctx context.Context) *Writer {
 
 	if responseWriter == nil {
+		logger := GetLogger(ctx)
+
 		responseWriter = &Writer{
 			ctx: ctx,
-			Db: getDB(ctx),
+			// Db: getDB(ctx),
+			logger: logger,
 		}
 	}
 	return responseWriter
 }
 
-func (w *Writer) WriteResponse(msg dtos.ReceiveLog){
+func (w *Writer) WriteResponse(msg *dtos.ReceiveLog){
+	w.wg.Add(1)
 	go func(){
+		defer w.wg.Done()
 		w.writeDB(msg)
 	}()
-
+	
+	w.wg.Add(1)
 	go func() {
+		defer w.wg.Done()
 		w.writeLog(msg)
 	}()
 }
 
-func (w *Writer) writeLog(msg dtos.ReceiveLog){
+func (w *Writer) writeLog(msg *dtos.ReceiveLog){
 	loggingFields := logrus.Fields{
 		"MessageID":    msg.MessageID,
 		"MessageState": msg.MessageState,
@@ -55,10 +65,10 @@ func (w *Writer) writeLog(msg dtos.ReceiveLog){
 		"Data":         msg.Data,
 	}
 
-	logrus.WithFields(loggingFields).Info(" new dlr ")
+	w.logger.WithFields(loggingFields).Info(" new dlr ")
 }
 
-func (w *Writer) writeDB(msg dtos.ReceiveLog){
+func (w *Writer) writeDB(msg *dtos.ReceiveLog){
 	db := getDB(w.ctx)
 	mobileNo, _  := strconv.ParseInt(msg.MobileNo, 10, 64)
 	// todo: log error
@@ -75,6 +85,11 @@ func (w *Writer) writeDB(msg dtos.ReceiveLog){
 	if tx.Error != nil {
 		logrus.Printf("failed to insert data: %v\n", tx.Error)
 	}
+}
+
+
+func (w* Writer) Close(){
+	w.wg.Wait()
 }
 
 // should I use context ?

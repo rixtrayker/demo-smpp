@@ -4,3 +4,4 @@
 .env
 todo
 /js/node_modules
+*.log

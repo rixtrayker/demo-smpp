@@ -57,7 +57,7 @@ func (l *Logger) initLogger() error {
     }
     l.logger = &logrus.Logger{
         Out:       l.logFile,
-        Formatter: new(logrus.TextFormatter),
+        Formatter: &logrus.JSONFormatter{},
         Level:     logrus.InfoLevel,
     }
     return nil
