@@ -25,7 +25,11 @@ func (s *Session) Send(sender, number, message string) error {
 }
 
 func (s *Session) send(submitSM *pdu.SubmitSM) error{
-    return s.transceiver.Transceiver().Submit(submitSM)
+    if s.transceiver != nil {
+        return s.transceiver.Transceiver().Submit(submitSM)
+    } else {
+        return s.transmitter.Transmitter().Submit(submitSM)
+    }
 }
 
 func newSubmitSM(sender, number, message string) *pdu.SubmitSM {

@@ -50,7 +50,7 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
                 log.Println("Provider", provider.Name)
             }
 
-            rw := response.NewResponseWriter(ctx)
+            rw := response.NewResponseWriter()
             sess := session.NewSession(provider, nil, session.WithResponseWriter(rw))
             err := sess.StartSession(provider)
             if err != nil {
@@ -129,7 +129,6 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 }
 
 func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
-
     fmt.Println("Sending 1200 messages")
     sem := make(chan struct{}, 1000)
     for i := 0; i < 1200; i++ {

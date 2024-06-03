@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -18,7 +17,7 @@ var (
 	once   sync.Once
 )
 
-func connect(ctx context.Context) error {
+func connect() error {
 	var err error
 	cfg := config.LoadConfig().DatabaseConfig
 
@@ -40,7 +39,6 @@ func connect(ctx context.Context) error {
 			err = fmt.Errorf("failed to connect to database: %w", err)
 			return
 		}
-		DB.WithContext(ctx)
 		sqlDB, err := DB.DB()
 		if err != nil {
 			err = fmt.Errorf("failed to get underlying sql.DB: %w", err)
@@ -55,15 +53,15 @@ func connect(ctx context.Context) error {
 	return err
 }
 
-func GetDBInstance(ctx context.Context) (*gorm.DB, error) {
-	err := connect(ctx)
+func GetDBInstance() (*gorm.DB, error) {
+	err := connect()
 	if err != nil {
 		return nil, err
 	}
 	return DB, nil
 }
 
-func Close(ctx context.Context) error {
+func Close() error {
 	if DB == nil {
 		return ErrDBNotConnected
 	}

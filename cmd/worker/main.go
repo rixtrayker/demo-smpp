@@ -26,12 +26,10 @@ func main() {
 	}
 
 	cfg := config.LoadConfig()
-	// if its empty stop the program
-	// Channel to receive shutdown signals
+
 	quit := make(chan os.Signal, 1)
 	// Notify on SIGINT (CTRL+C) and SIGTERM (termination signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
@@ -44,13 +42,14 @@ func main() {
 		logrus.Println("Shutting down gracefully...")
 
 		cancel()
+		os.Exit(0)
 	}()
 
-	myDb, err = db.GetDBInstance(ctx)
+	myDb, err = db.GetDBInstance()
 	if err != nil {
 		logrus.Fatalf("failed to connect to database: %v", err)
 	}
-	testDbAndModels(myDb)
+	// testDbAndModels(myDb)
 
 	wg.Add(1)
 	go func() {
@@ -59,8 +58,8 @@ func main() {
 	}()
 
 	wg.Wait()
-
 	logrus.Println("Worker stopped. Exiting.")
+
 }
 
 func testDbAndModels(db *gorm.DB) {

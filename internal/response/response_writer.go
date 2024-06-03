@@ -1,7 +1,6 @@
 package response
 
 import (
-	"context"
 	"strconv"
 	"sync"
 
@@ -22,20 +21,17 @@ type ResponseWriter interface {
 }
 
 type Writer struct{
-	ctx context.Context
 	Db *gorm.DB
 	logger *logrus.Logger
 	wg sync.WaitGroup
 }
 
-func NewResponseWriter(ctx context.Context) *Writer {
-
+func NewResponseWriter() *Writer {
 	if responseWriter == nil {
-		logger := GetLogger(ctx)
+		logger := GetLogger()
 
 		responseWriter = &Writer{
-			ctx: ctx,
-			// Db: getDB(ctx),
+			// Db: getDB(),
 			logger: logger,
 		}
 	}
@@ -69,7 +65,7 @@ func (w *Writer) writeLog(msg *dtos.ReceiveLog){
 }
 
 func (w *Writer) writeDB(msg *dtos.ReceiveLog){
-	db := getDB(w.ctx)
+	db := getDB()
 	mobileNo, _  := strconv.ParseInt(msg.MobileNo, 10, 64)
 	// todo: log error
 	dlrSms := &models.DlrSms{
@@ -92,12 +88,11 @@ func (w* Writer) Close(){
 	w.wg.Wait()
 }
 
-// should I use context ?
 
-func getDB(ctx context.Context) *gorm.DB{
+func getDB() *gorm.DB{
 	var err error
 	if myDb == nil {
-		myDb, err = db.GetDBInstance(ctx)
+		myDb, err = db.GetDBInstance()
 	}
 
 	if err != nil {

@@ -18,7 +18,7 @@ type Logger struct {
     logFile        *os.File
     logMutex       sync.Mutex
     logger         *logrus.Logger
-    loggerCtx      context.Context
+    ctx            context.Context
     rotationFunc   func(time.Duration) error
 }
 
@@ -29,14 +29,14 @@ var (
     logFileMode    = os.FileMode(0644)
 )
 
-func NewLogger(ctx context.Context) (*Logger, error) {
+func NewLogger() (*Logger, error) {
     logMutex.Lock()
     defer logMutex.Unlock()
     if instance == nil {
         instance = &Logger{
             logFilePattern: logFilePattern,
             logFileMode:    logFileMode,
-            loggerCtx:      ctx,
+            ctx:           context.Background(),
         }
         err := instance.initLogger()
         if err != nil {
@@ -76,8 +76,8 @@ func (l *Logger) getLogger() *logrus.Logger {
     return l.logger
 }
 
-func GetLogger(ctx context.Context) *logrus.Logger {
-    logger, err := NewLogger(ctx)
+func GetLogger() *logrus.Logger {
+    logger, err := NewLogger()
     if err != nil {
         panic(err)
     }
@@ -85,14 +85,14 @@ func GetLogger(ctx context.Context) *logrus.Logger {
 }
 
 func (l *Logger) autoRotateLogFile() {
-    if l.loggerCtx == nil {
+    if l.ctx == nil {
         return
     }
     ticker := time.NewTicker(24 * time.Hour)
     defer ticker.Stop()
     for {
         select {
-        case <-l.loggerCtx.Done():
+        case <-l.ctx.Done():
             return
         case <-ticker.C:
             now := time.Now()

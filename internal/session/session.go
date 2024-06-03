@@ -14,20 +14,32 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+    Transceiver = "transceiver"
+    Receiver    = "receiver"
+    Transmitter = "transmitter"
+)
+
 type Session struct {
-    transceiver    *gosmpp.Session
-    maxOutstanding int
-    hasOutstanding bool
-    outstandingCh  chan struct{}
-    mu             sync.Mutex
-    handler        func(pdu.PDU) (pdu.PDU, bool)
-    stop           chan struct{}
-    concatenated   map[uint8][]string
-    Status         map[int32]*MessageStatus
-    maxRetries     int
-    responseWriter *response.Writer
-    wg             sync.WaitGroup
-    notCancelled   bool
+    transceiver       *gosmpp.Session
+    receiver          *gosmpp.Session
+    transmitter       *gosmpp.Session
+    sessionType       string
+    maxOutstanding    int
+    hasOutstanding    bool
+    outstandingCh     chan struct{}
+    mu                sync.Mutex
+    handler           func(pdu.PDU) (pdu.PDU, bool)
+    stop              chan struct{}
+    concatenated      map[uint8][]string
+    Status            map[int32]*MessageStatus
+    maxRetries        int
+    responseWriter    *response.Writer
+    wg                sync.WaitGroup
+    auth              gosmpp.Auth
+    EnquireLink       time.Duration
+    ReadTimeout       time.Duration
+    rebindingInterval time.Duration
 }
 
 type MessageStatus struct {
@@ -67,11 +79,17 @@ func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool), opti
     session := &Session{
         concatenated:   make(map[uint8][]string),
         handler:        handler,
+        maxOutstanding: cfg.MaxOutStanding,
+        hasOutstanding: cfg.HasOutStanding,
+        maxRetries:     cfg.MaxRetries,
         outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
         stop:           make(chan struct{}),
         Status:         make(map[int32]*MessageStatus),
         wg:             sync.WaitGroup{},
-        notCancelled:   true,
+        sessionType:    cfg.SessionType,
+        EnquireLink:    5 * time.Second,
+        ReadTimeout:    10 * time.Second,
+        rebindingInterval: 600 * time.Second,
     }
 
     for _, option := range options {
@@ -82,11 +100,11 @@ func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool), opti
 }
 
 func (s *Session) StartSession(cfg config.Provider) error {
-    auth := gosmpp.Auth{
+    s.auth = gosmpp.Auth{
         SMSC:       cfg.SMSC,
         SystemID:   cfg.SystemID,
         Password:   cfg.Password,
-        SystemType: "",
+        SystemType: cfg.SystemType,
     }
 
     initialDelay := 100 * time.Millisecond
@@ -98,35 +116,66 @@ func (s *Session) StartSession(cfg config.Provider) error {
         case <-s.stop:
             return fmt.Errorf("session stopped")
         default:
-            session, err := gosmpp.NewSession(
-                gosmpp.TRXConnector(gosmpp.NonTLSDialer, auth),
-                gosmpp.Settings{
-                    EnquireLink:  5 * time.Second,
-                    ReadTimeout:  10 * time.Second,
-                    OnSubmitError: s.handleSubmitError,
-                    OnReceivingError: s.handleReceivingError,
-                    OnRebindingError: s.handleRebindingError,
-                    // OnAllPDU: s.handler,
-                    OnAllPDU: handlePDU(s),
+            err := s.sessionConnect()
 
-                    OnClosed: s.handleClosed,
-                },
-                5*time.Second,
-            )
-
-            if err == nil {
-                s.transceiver = session
+            if err != nil {
+                delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
+                logrus.WithError(err).Errorf("session.go:Failed to create session for provider %s", cfg.Name)
+                time.Sleep(delay)
+            } else {
                 return nil
             }
-
-            delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-            logrus.WithError(err).Errorf("session.go:Failed to create session for provider %s", cfg.Name)
-
-            time.Sleep(delay)
         }
     }
 
     return fmt.Errorf("failed to create session after %d retries", s.maxRetries)
+}
+
+
+func (s *Session) sessionConnect() error {
+    var err, err2 error
+    switch s.sessionType {
+    case Transceiver:   
+        s.transceiver, err = gosmpp.NewSession(
+            gosmpp.TRXConnector(gosmpp.NonTLSDialer, s.auth),
+            s.getSetting(), 
+            s.rebindingInterval,
+        )
+        
+        if err != nil {
+            return fmt.Errorf("failed to create session: %v", err)
+        }
+    default:
+        s.receiver, err = gosmpp.NewSession(
+            gosmpp.RXConnector(gosmpp.NonTLSDialer, s.auth),
+            s.getSetting(),
+            s.rebindingInterval,
+        )
+
+        s.transmitter, err2 = gosmpp.NewSession(
+            gosmpp.TXConnector(gosmpp.NonTLSDialer, s.auth),
+            s.getSetting(),
+            s.rebindingInterval,
+        )
+
+        if err != nil || err2 != nil {
+            return fmt.Errorf("failed to create sessions: %v, %v", err, err2)
+        }
+    }
+
+    return nil
+}
+
+func (s *Session) getSetting() gosmpp.Settings {
+    return gosmpp.Settings{
+        EnquireLink:    s.EnquireLink,
+        ReadTimeout:    s.ReadTimeout,
+        OnAllPDU: handlePDU(s),
+        OnSubmitError: s.handleSubmitError,
+        OnReceivingError: s.handleReceivingError,
+        OnRebindingError: s.handleRebindingError,
+        OnClosed: s.handleClosed,
+    }
 }
 
 func (s *Session) handleSubmitError(p pdu.PDU, err error) {
@@ -148,6 +197,8 @@ func (s *Session) handleClosed(state gosmpp.State) {
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
     return func(p pdu.PDU) (pdu.PDU, bool) {
         switch pd := p.(type) {
+        case *pdu.BindResp:
+            // logrus.Info("BindResp Received")
         case *pdu.Unbind:
             fmt.Println("Unbind Received")
             return pd.GetResponse(), true
@@ -157,15 +208,16 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
             if s.hasOutstanding {
                 <-s.outstandingCh
             }
-            msgID := pd.MessageID
             ref := pd.SequenceNumber
             s.mu.Lock()
-            s.Status[ref].MessageID = msgID
+            // s.Status[ref].MessageID = msgID
             s.Status[ref].Status = "pending"
             s.responseWriter.WriteResponse(&dtos.ReceiveLog{
-                MessageID:    msgID,
+                // MessageID:    msgID,
                 MobileNo:     s.Status[ref].Number,
                 MessageState: "SubmitSMResp",
+                ErrorCode:    "0",
+                // Data:        "id:" + msgID,
             })
             s.mu.Unlock()
             logrus.Info("SubmitSMResp Received")

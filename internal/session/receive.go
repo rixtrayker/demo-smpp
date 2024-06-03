@@ -1,7 +1,6 @@
 package session
 
 import (
-	"log"
 	"strings"
 
 	"github.com/linxGnu/gosmpp/pdu"
@@ -11,51 +10,10 @@ import (
 
 
 func (s *Session) handleDeliverSM(pd *pdu.DeliverSM) (pdu.PDU, bool) {
-	// receiver := pd.DestAddr.Address()
-	message, err := pd.Message.GetMessage()
-	if err != nil {
-		logrus.WithError(err).Info("Decoding DeliverSM message error")
-	}
-
-	totalParts, sequence, reference, found := pd.Message.UDH().GetConcatInfo()
-	// udh:= pd.Message.UDH()
-	// log.Printf("udh: %v", udh)
-	
 	data := PrepareResult(pd)
 	(*s.responseWriter).WriteResponse(&data)
 
-	if found {
-		return s.handleConcatenatedSMS(reference, message, totalParts, sequence, pd)
-	}
-	
 	return pd.GetResponse(), false
-}
-
-func (s *Session) handleConcatenatedSMS(reference uint8, message string, totalParts, sequence byte, pd *pdu.DeliverSM) (pdu.PDU, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.concatenated[reference]; !ok {
-		s.concatenated[reference] = make([]string, totalParts)
-	}
-
-	s.concatenated[reference][sequence-1] = message
-
-	if isConcatenatedDone(s.concatenated[reference], totalParts) {
-		log.Println(strings.Join(s.concatenated[reference], ""))
-		delete(s.concatenated, reference)
-	}
-
-	return pd.GetResponse(), false
-}
-
-func isConcatenatedDone(parts []string, total byte) bool {
-	for _, part := range parts {
-		if part == "" {
-			total--
-		}
-	}
-	return total == 0
 }
 
 func getRceiptedMessageID(pd *pdu.DeliverSM) string {
@@ -65,25 +23,36 @@ func getRceiptedMessageID(pd *pdu.DeliverSM) string {
 	return msgId
 }
 
-func getMessageId(pd *pdu.DeliverSM) string {
-	msgID := ""
+func getField(message string, prefix string) string {
+	field := ""
+
+	result := strings.Split(message, prefix)
+
+	if len(result) > 1 {
+		field = result[1]
+	}
+
+	result = strings.Split(field, " ")
+
+	if len(result) > 1 {
+		field = result[0]
+	}
+
+	return field
+}
+
+
+func getMessageData(pd *pdu.DeliverSM) (string, string, error) {
 	message, err := pd.Message.GetMessage()
 	if err != nil {
 		logrus.WithError(err).Info("Got error when getting DeliverSM message")
-	}
-	result := strings.Split(message, "msgID:")
-
-	if len(result) > 1 {
-		msgID = result[1]
+		return "", "", err
 	}
 
-	result = strings.Split(msgID, " ")
+	id := getField(message, "id:")
+	dlvrd := getField(message, "dlvrd:")
 
-	if len(result) > 1 {
-		msgID = result[0]
-	}
-
-	return msgID
+	return id, dlvrd, nil
 }
 
 func (s *Session) Write(rl dtos.ReceiveLog){
@@ -93,15 +62,16 @@ func (s *Session) Write(rl dtos.ReceiveLog){
 func PrepareResult(pd *pdu.DeliverSM) dtos.ReceiveLog {
 	msgID := getRceiptedMessageID(pd)
 	mobileNo := pd.SourceAddr.Address()
-
-		// MessageState string 
-		// ErrorCode    string 
-		// MobileNo     int64  
-		// CurrentTime  time.Time
-		// Data         string 
+	submitID, dlvrd, err := getMessageData(pd)
+	if err != nil {
+		logrus.WithError(err).Info("Got error when getting DeliverSM message")
+	}
 
 	return dtos.ReceiveLog{
 		MessageID: msgID,
 		MobileNo: mobileNo,
+		MessageState: "DELIVERED",
+		ErrorCode: dlvrd,
+		Data: "id:" + submitID,
 	}   
 }

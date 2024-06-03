@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -10,8 +9,7 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	logger := response.GetLogger(ctx)
+	logger := response.GetLogger()
 
 	var wg sync.WaitGroup
 
@@ -23,9 +21,6 @@ func main() {
 			logger.Info(i)
 			wg.Done()
 		}(i)
-		if i == 233 {
-			cancel()
-		}
 	}
 
 	wg.Wait()

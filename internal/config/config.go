@@ -11,7 +11,7 @@ type Config struct {
     RateLimit        int
     SMPPConfig       SMPPConfig
     DatabaseConfig   DatabaseConfig
-    ProvidersConfig []Provider
+    ProvidersConfig  []Provider
 }
 
 type SMPPConfig struct {
@@ -30,14 +30,15 @@ type DatabaseConfig struct {
 }
 
 type Provider struct {
-    Name     string
-    SMSC       string
-    SystemID   string
-    Password   string
-    SystemType string
-    MaxOutStanding int
-    HasOutStanding bool
-    MaxRetries int
+    Name            string
+    SessionType     string
+    SMSC            string
+    SystemID        string
+    Password        string
+    SystemType      string
+    MaxOutStanding  int
+    HasOutStanding  bool
+    MaxRetries      int
     // Port     int
     // Username string
     // Password string
@@ -49,7 +50,7 @@ func LoadConfig() Config {
         RateLimit:        100,
         SMPPConfig:       loadSMPPConfig(),
         DatabaseConfig:   loadDatabaseConfig(),
-        ProvidersConfig:   loadProvidersConfig(),
+        ProvidersConfig:  loadProvidersConfig(),
     }
 }
 
@@ -87,6 +88,7 @@ func loadProviderConfig(provider string) Provider {
     host := strings.TrimSpace(os.Getenv(provider + "_HOST"))
     port := strings.TrimSpace(os.Getenv(provider + "_PORT"))
     smsc := host + ":" + port
+    sessionType := strings.TrimSpace(os.Getenv(provider + "_SESSION_TYPE"))
     name := strings.TrimSpace(os.Getenv(provider + "_NAME"))
     systemID := strings.TrimSpace(os.Getenv(provider + "_SYSTEM_ID"))
     password := strings.TrimSpace(os.Getenv(provider + "_PASSWORD"))
@@ -116,6 +118,7 @@ func loadProviderConfig(provider string) Provider {
 
     return Provider{
         Name:           name,
+        SessionType:    sessionType,
         SMSC:           smsc,
         SystemID:       systemID,
         Password:       password,
