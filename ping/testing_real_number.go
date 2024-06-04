@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/rixtrayker/demo-smpp/internal/session"
 )
@@ -76,7 +77,7 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
     }
 
 
-    rw := response.NewResponseWriter(ctx)
+    rw := response.NewResponseWriter()
     sess := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
     var err error
     select{
@@ -98,7 +99,15 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
     sessionsList[providerName] = sess
     mu.Unlock()
 
-    err = sess.Send("dreams", number, msg)
+    // Send SMS
+    msgData := queue.MessageData{
+        Sender: "GoLang",
+        Number: number,
+        Text:   msg,
+        Gateway: providerName,
+        GatewayHistory: []string{},
+    }
+    err = sess.Send(msgData)
     if err != nil {
         fmt.Println("Error sending SMS:", err)
     }
@@ -107,7 +116,7 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
 }
 
 func dumpStatus(s *session.Session) {
-    for k, v := range s.Status {
+    for k, v := range s.MessagesStatus {
         fmt.Printf("Key: %v, Value: %v\n", k, v)
     }
 }
