@@ -6,12 +6,15 @@ import (
 	"strings"
 )
 
+var config *Config
+var providersList []Provider
 type Config struct {
     RedisURL         string
     RateLimit        int
     SMPPConfig       SMPPConfig
     DatabaseConfig   DatabaseConfig
     ProvidersConfig  []Provider
+    Queues          []string
 }
 
 type SMPPConfig struct {
@@ -44,14 +47,21 @@ type Provider struct {
     // Password string
 }
 
-func LoadConfig() Config {
-    return Config{
+func LoadConfig() *Config {
+    if config != nil{
+        return config
+    }
+
+    config = &Config{
         RedisURL:         os.Getenv("REDIS_URL"),
         RateLimit:        100,
         SMPPConfig:       loadSMPPConfig(),
         DatabaseConfig:   loadDatabaseConfig(),
         ProvidersConfig:  loadProvidersConfig(),
+        Queues:           loadQueues(),
     }
+
+    return config
 }
 
 func loadSMPPConfig() SMPPConfig {
@@ -127,4 +137,17 @@ func loadProviderConfig(provider string) Provider {
         HasOutStanding: hasOutStanding,
         MaxRetries:     maxRetries,
     }
+}
+
+func loadQueues() []string {
+    return strings.Split(os.Getenv("QUEUES"), ",")
+}
+
+func GetProviderCfg(name string) Provider{
+    for _, provider := range providersList{
+        if provider.Name == name {
+            return provider
+        }
+    }
+    return Provider{}
 }

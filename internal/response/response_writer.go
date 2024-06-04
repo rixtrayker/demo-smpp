@@ -54,6 +54,7 @@ func (w *Writer) WriteResponse(msg *dtos.ReceiveLog){
 
 func (w *Writer) writeLog(msg *dtos.ReceiveLog){
 	loggingFields := logrus.Fields{
+		"Gateway":      msg.Gateway,
 		"MessageID":    msg.MessageID,
 		"MessageState": msg.MessageState,
 		"ErrorCode":    msg.ErrorCode,

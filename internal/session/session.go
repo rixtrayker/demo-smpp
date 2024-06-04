@@ -9,7 +9,7 @@ import (
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/rixtrayker/demo-smpp/internal/dtos"
+	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
 )
@@ -21,32 +21,37 @@ const (
 )
 
 type Session struct {
+    gateway            string
     transceiver       *gosmpp.Session
     receiver          *gosmpp.Session
     transmitter       *gosmpp.Session
     sessionType       string
     maxOutstanding    int
     hasOutstanding    bool
-    outstandingCh     chan struct{}
+    OutstandingCh     chan struct{}
+    ResendChannel     chan queue.MessageData
     mu                sync.Mutex
     handler           func(pdu.PDU) (pdu.PDU, bool)
     stop              chan struct{}
     concatenated      map[uint8][]string
-    Status            map[int32]*MessageStatus
+    MessagesStatus    map[int32]*MessageStatus
     maxRetries        int
     responseWriter    *response.Writer
     wg                sync.WaitGroup
     auth              gosmpp.Auth
     EnquireLink       time.Duration
     ReadTimeout       time.Duration
-    rebindingInterval time.Duration
+    rebindingInterval time.Duration    
 }
 
 type MessageStatus struct {
-    DreamsMessageID int
-    MessageID       string
+    MessageID       string // submitSMResp.MessageID 
+    SystemMessageID int // Dreams MessageID
+    Sender          string
+    Text            string
     Status          string
     Number          string
+    GatewayHistory  []string
 }
 
 type Option func(*Session)
@@ -77,19 +82,21 @@ func WithResponseWriter(responseWriter *response.Writer) Option {
 
 func NewSession(cfg config.Provider, handler func(pdu.PDU) (pdu.PDU, bool), options ...Option) *Session {
     session := &Session{
+        gateway:        cfg.Name,
         concatenated:   make(map[uint8][]string),
         handler:        handler,
         maxOutstanding: cfg.MaxOutStanding,
         hasOutstanding: cfg.HasOutStanding,
         maxRetries:     cfg.MaxRetries,
-        outstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
+        OutstandingCh:  make(chan struct{}, cfg.MaxOutStanding),
         stop:           make(chan struct{}),
-        Status:         make(map[int32]*MessageStatus),
+        MessagesStatus:      make(map[int32]*MessageStatus),
         wg:             sync.WaitGroup{},
         sessionType:    cfg.SessionType,
         EnquireLink:    5 * time.Second,
         ReadTimeout:    10 * time.Second,
         rebindingInterval: 600 * time.Second,
+        ResendChannel: make(chan queue.MessageData),
     }
 
     for _, option := range options {
@@ -205,22 +212,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
         case *pdu.UnbindResp:
             // fmt.Println("UnbindResp Received")
         case *pdu.SubmitSMResp:
-            if s.hasOutstanding {
-                <-s.outstandingCh
-            }
-            ref := pd.SequenceNumber
-            s.mu.Lock()
-            // s.Status[ref].MessageID = msgID
-            s.Status[ref].Status = "pending"
-            s.responseWriter.WriteResponse(&dtos.ReceiveLog{
-                // MessageID:    msgID,
-                MobileNo:     s.Status[ref].Number,
-                MessageState: "SubmitSMResp",
-                ErrorCode:    "0",
-                // Data:        "id:" + msgID,
-            })
-            s.mu.Unlock()
-            logrus.Info("SubmitSMResp Received")
+            return s.handleSubmitSMResp(pd)
             // fmt.Println("SubmitSMResp Received")
         case *pdu.GenericNack:
             // fmt.Println("GenericNack Received")
@@ -240,13 +232,13 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 }
 
 func (s *Session) Stop() {
-    close(s.outstandingCh)
-    for len(s.outstandingCh) > 0 {
-    }
+    close(s.OutstandingCh)
     close(s.stop)
     if s.transceiver != nil {
         s.transceiver.Close()
     }
     s.wg.Wait()
+    // todo: is this necessary? and best place for this line ?
+    close(s.ResendChannel)
     s.responseWriter.Close()
 }
