@@ -12,6 +12,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 
 	// "github.com/rixtrayker/demo-smpp/internal/handlers"
@@ -80,9 +81,6 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
         wg.Done()
     }()
 
-    // blocking test
-    // InitSessionsAndClients(ctx, cfg)
-
     wg.Add(1)
     go func(ctx context.Context, cfg *config.Config) {
         InitSessionsAndClients(ctx, cfg)
@@ -143,7 +141,15 @@ func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
                 defer wg.Done()
                 defer func() { <-sem }()
                 msg := fmt.Sprintf("msg %d", i)
-                if err := s.Send("amr-test", "akdakkd", msg); err != nil {
+                msgData := queue.MessageData{
+                    Sender:      "sender",
+                    Number:      "number",
+                    Text:        msg,
+                    Gateway:     "gateway",
+                    GatewayHistory: []string{},
+                }
+                
+                if err := s.Send(msgData); err != nil {
                     log.Println("Failed to send message:", err)
                 }
             }(s, i)
