@@ -5,3 +5,8 @@
 todo
 /js/node_modules
 *.log
+
+.DS_Store
+internal/.DS_Store
+*/**/.DS_Store
+*/.DS_Store
