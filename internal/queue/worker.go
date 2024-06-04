@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/atomic"
@@ -11,17 +10,18 @@ import (
 
 type Worker struct {
     // id            int
+    ctx          context.Context
     redis      *redis.Client
     decoder       *Decoder
     queues       []string
     errors        chan error
     rateLimitCount *atomic.Int64
-	wg 				*sync.WaitGroup
 }
 
 
 func NewWorker() (*Worker, error) {
     decoder := NewDecoder()
+    
 
     client := redis.NewClient(&redis.Options{
         Addr:     "localhost:6379",
@@ -35,6 +35,7 @@ func NewWorker() (*Worker, error) {
 
 
     worker := &Worker{
+        ctx: context.Background(),
         redis:     client,
         decoder:     decoder,
         errors:       make(chan error, 100),
@@ -45,10 +46,8 @@ func NewWorker() (*Worker, error) {
 }
 
 // func (w *Worker) Start(ctx context.Context) {
-//     defer w.wg.Done()
 //     for {
 //         select {
-//         case <-ctx.Done():
 //             return
 //         default:
 //             msg, err := w.Consume(ctx)
@@ -63,11 +62,11 @@ func NewWorker() (*Worker, error) {
 
 func (w *Worker) Stop() {
     w.Close()
-    
 }
 
-func (w *Worker) Consume(ctx context.Context) (QueueMessage, error) {
-	result, err := w.redis.BLPop(ctx, 0, w.queues...).Result()
+func (w *Worker) Consume(q []string) (QueueMessage, error) {
+
+    result, err := w.redis.BLPop(w.ctx, 0, q...).Result()
 	if err != nil {
 		return QueueMessage{}, err
 	}
@@ -76,12 +75,63 @@ func (w *Worker) Consume(ctx context.Context) (QueueMessage, error) {
     return w.decoder.DecodeJSON([]byte(result[1]))
 }
 
+func (w *Worker) streamQueueMessage(q []string) (<-chan QueueMessage, <-chan error) {
+    messages := make(chan QueueMessage, 200) // Buffered channel with size 200
+    errors := make(chan error)
 
+    go func() {
+        defer close(messages)
+        defer close(errors)
 
+        for {
+            select {
+            case <-w.ctx.Done():
+                return
+            default:
+                result, err := w.Consume(q)
+                if err != nil {
+                    errors <- err
+                    continue
+                }
 
-// func (w *Worker) processMessage(process func (context.Context, QueueMessage) error) error {
-//     return process(ctx, msg)
-// }
+                messages <- result
+            }
+        }
+    }()
+    
+    return messages, errors
+}
+
+func (w *Worker) Stream(q []string) (<-chan MessageData, <-chan error) {
+    var queues []string
+
+    if len(q) == 0 {
+        queues = w.queues
+    } else {
+        queues = q
+    }
+
+    messages, errors := w.streamQueueMessage(queues)
+    data := make(chan MessageData)
+    go func() {
+        defer close(data)
+        for msgQ := range messages {
+            for _, msg := range msgQ.Deflate() {
+                    data <- msg
+            }
+        }
+    }()
+
+    return data, errors
+}
+
+func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) error {
+    _, err := w.redis.RPush(ctx, queue, message).Result()
+    if err != nil {
+        return err
+    }
+    return nil
+}
 
 func (w *Worker) Close() error {
 	err := w.redis.Close()
@@ -89,6 +139,5 @@ func (w *Worker) Close() error {
 		return err
 	}
 	close(w.errors)
-    w.wg.Wait()
 	return nil
 }
