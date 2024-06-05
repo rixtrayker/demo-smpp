@@ -14,7 +14,6 @@ type Config struct {
     SMPPConfig       SMPPConfig
     DatabaseConfig   DatabaseConfig
     ProvidersConfig  []Provider
-    Queues          []string
 }
 
 type SMPPConfig struct {
@@ -42,6 +41,7 @@ type Provider struct {
     MaxOutStanding  int
     HasOutStanding  bool
     MaxRetries      int
+    Queues          []string
     // Port     int
     // Username string
     // Password string
@@ -58,7 +58,6 @@ func LoadConfig() *Config {
         SMPPConfig:       loadSMPPConfig(),
         DatabaseConfig:   loadDatabaseConfig(),
         ProvidersConfig:  loadProvidersConfig(),
-        Queues:           loadQueues(),
     }
 
     return config
@@ -136,11 +135,12 @@ func loadProviderConfig(provider string) Provider {
         MaxOutStanding: maxOutstanding,
         HasOutStanding: hasOutStanding,
         MaxRetries:     maxRetries,
+        Queues:         loadQueues(provider),
     }
 }
 
-func loadQueues() []string {
-    return strings.Split(os.Getenv("QUEUES"), ",")
+func loadQueues(provider string) []string {
+    return strings.Split(os.Getenv(provider + "_QUEUES"), ",")
 }
 
 func GetProviderCfg(name string) Provider{

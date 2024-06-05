@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/rixtrayker/demo-smpp/internal/app/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/config"
@@ -34,11 +33,16 @@ func NewClientBase(ctx context.Context, name string) (*ClientBase, error) {
 	if ctx == nil {
 		return nil, errors.New("context cannot be nil")
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
 	
 	cfg := config.GetProviderCfg(name)
 	rw := response.NewResponseWriter()
-	sess := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
+	sess, err := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
+	if err != nil {
+		// cancel()
+		return nil, err
+	}
 	// state, _ := state.NewState(ctx)
 	return &ClientBase{
 		providerName: name,
@@ -47,7 +51,7 @@ func NewClientBase(ctx context.Context, name string) (*ClientBase, error) {
 		cancelFunc: &cancel,
 		cfg: cfg,
 		session: sess,
-		
+		queues: cfg.Queues,
 		// state: state,
 	}, nil
 }
@@ -64,7 +68,7 @@ func (c *ClientBase) Start() {
 		return
 	}
 
-	w, err := queue.NewWorker()
+	w, err := queue.NewWorker(c.queues)
 	c.worker = w
 	if err != nil {
 		return
@@ -74,41 +78,39 @@ func (c *ClientBase) Start() {
 		defer c.wg.Done()
 		c.runPorted()
 	}()
-    messages, errors := w.Stream([]string{})
-	// defer w.Stop()
+    messages, errors := w.Stream()
+
+	defer c.Stop()
+
 	for {
 		select {
-		// case <-c.ctx.Done():
-		// 	c.wg.Wait()
-		// 	c.session.Close()
-		// 	w.Close()
-		// 	return
-		case msg := <-messages:
-			err := c.session.Send(msg)
-			if err != nil {
-				logrus.WithError(err).Error("failed sending message")
+			case <-c.ctx.Done():
+			    c.wg.Wait()
+				return
+			case msg := <-messages:
+				err := c.session.Send(msg)
+				if err != nil {
+					logrus.WithError(err).Error("failed sending message")
+				}
+			case err := <-errors:
+				logrus.WithError(err).Error("failed reading from queue")
 			}
-		case err := <-errors:
-			logrus.WithError(err).Error("failed reading from queue")
-		}
 	}
 	
-	time.Sleep(1 * time.Second)
-	for len(c.session.OutstandingCh) > 0{
-	}
+	
 
-	c.session.Stop()
+	
 	// c.wg.Wait()
 	// for wait random time and check len c.session.ResendChannel then close it
 }
 
 func(c *ClientBase) runPorted(){
-	msg := c.session.ResendChannel
+	msg, _ := c.session.StreamPorted()
 	for msg := range msg {
 		err := c.worker.Push(c.ctx, "ported", &msg)
 		if err != nil {
 			logrus.WithError(err).Error("failed sending message")
-			c.session.Write(dtos.ReceiveLog{
+			c.session.Write(&dtos.ReceiveLog{
 				MessageID: strconv.Itoa(msg.Id),
 				Gateway: msg.Gateway,
 				MobileNo: msg.Number,
@@ -120,6 +122,6 @@ func(c *ClientBase) runPorted(){
 	}
 }
 
-// func (c *ClientBase) Stop() {
-// 	c.state.Stop()
-// }
+func (c *ClientBase) Stop() {
+	c.session.Stop()
+}
