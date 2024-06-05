@@ -272,3 +272,33 @@ type Handler struct {
 func (h *Handler) HandlePDU(pd *interface{}) (pdu.PDU, bool) {
     return (*pd).(pdu.PDU).GetResponse(), true
 }
+
+func (s *Session) PushResendChannel(msg queue.MessageData) {
+	s.resendChannel <- msg
+}
+
+func (s *Session) PopResendChannel() queue.MessageData {
+	msg := <-s.resendChannel
+	return msg
+}
+
+// func stream StreamPorted() chan queue.MessageData {
+func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
+	// messages := make(chan queue.MessageData)
+	errors := make(chan error)
+
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case msg := <-s.resendChannel:
+	// 			messages <- msg
+	// 		case <-s.stop:
+	// 			close(messages)
+	// 			close(errors)
+	// 			return
+	// 		}
+	// 	}
+	// }()
+
+	return s.resendChannel, errors
+}
