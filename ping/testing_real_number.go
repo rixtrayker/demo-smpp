@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -51,9 +52,6 @@ func TestLive(ctx context.Context) {
     // }()
 
     // Wait for cancellation or completion
-    for _, session := range sessionsList {
-        dumpStatus(session)
-    }
 
     fmt.Println("Testing Real Numbers Done")
 }
@@ -71,21 +69,26 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
     fmt.Printf("Testing session in ping file for %s\n", providerName)
 
     cfg := getProviderCfg(providerName)
-    if cfg == (config.Provider{}) {
+    if reflect.DeepEqual(cfg, config.Provider{}) {
         fmt.Printf("Empty %s config\n", providerName)
         return
     }
 
 
     rw := response.NewResponseWriter()
-    sess := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
     var err error
+    var sess *session.Session
+    sess, err = session.NewSession(cfg, nil, session.WithResponseWriter(rw))
+    if err != nil {
+        fmt.Println("Error creating session:", err)
+        return
+    }
     select{
     case <-ctx.Done():
         sess.Stop()
         return 
     default:
-        err = sess.StartSession(cfg)
+        err = sess.Start()
         fmt.Println("try to create session")
     }
     // tried to create a session but it failed
@@ -113,10 +116,4 @@ func testProvider(ctx context.Context, providerName, number, msg string) {
     }
 
     time.Sleep(30 * time.Second)
-}
-
-func dumpStatus(s *session.Session) {
-    for k, v := range s.MessagesStatus {
-        fmt.Printf("Key: %v, Value: %v\n", k, v)
-    }
 }
