@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"reflect"
 	"sync"
 	"time"
 
@@ -36,18 +37,15 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
     wg := sync.WaitGroup{}
 
     for _, provider := range cfg.ProvidersConfig {
-		if provider == (config.Provider{}) {
-			log.Println("Provider " + provider.Name + " is empty")
+        if reflect.DeepEqual(provider, config.Provider{}) {
+            log.Println("Provider " + provider.Name + " is empty")
             continue
         }
 		wg.Add(1)
 
         go func(provider config.Provider) {
             defer wg.Done()
-            if provider == (config.Provider{}) {
-                log.Println("Provider is empty")
-                return
-            }
+          
             if provider.Name != "" {
                 log.Println("Provider", provider.Name)
             }
@@ -70,6 +68,7 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
             }
         }(provider)
     }
+    
     wg.Wait()
 }
 
