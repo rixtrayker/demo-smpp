@@ -75,14 +75,13 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
 func Start(ctx context.Context, cfg *config.Config) {
     var wg sync.WaitGroup
 
-    wg.Add(1)
     go func() {
         <-ctx.Done()
+        wg.Wait()
         log.Println("Main cancelled, stopping app, ctx.Done()")
         for _, s := range appSessions {
             s.Stop()
         }
-        wg.Done()
     }()
 
     wg.Add(1)
@@ -97,7 +96,7 @@ func Start(ctx context.Context, cfg *config.Config) {
     log.Println("No. of sessions: ", len(appSessions))
     for _, sess := range appSessions {
     // for i := 0; i < 5; i++ {
-            wg.Add(1)
+        wg.Add(1)
         go func(s *session.Session) {
         // go func() {
             defer wg.Done()
