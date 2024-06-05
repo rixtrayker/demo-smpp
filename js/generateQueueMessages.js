@@ -1,10 +1,10 @@
 const redis = require('redis');
 const client = redis.createClient();
+const gateways = ['zain', 'stc', 'mobily']
 
 // Connect to Redis
 client.on('error', (err) => console.log('Redis Client Error', err));
 client.connect();
-
 // Function to generate a random list of phone numbers
 function generatePhoneNumbers(maxLength = 10) {
   const numNumbers = Math.floor(Math.random() * maxLength) + 1;
@@ -30,12 +30,13 @@ function createQueueMessage(gateway) {
 async function writeToQueue(queueName, messageCount) {
   const queueKey = `queue:${queueName}`;
   let totalSent = 0;
-  const providerCounts = {}; // Track messages sent per provider
+  const providerCounts = {};
 
   for (let i = 0; i < messageCount; i++) {
-    const gateway = ['zain', 'stc', 'mobily'][Math.floor(Math.random() * 3)];
+    const gateway = gateways[Math.floor(Math.random() * 3)];
+    gatewayQueue = `queue:${queueName}:${gateway}`;
     const message = JSON.stringify(createQueueMessage(gateway));
-    await client.rPush(queueKey, message);
+    await client.rPush(gatewayQueue, message);
     totalSent++;
     providerCounts[gateway] = (providerCounts[gateway] || 0) + 1;
   }
@@ -53,7 +54,7 @@ async function writeToQueue(queueName, messageCount) {
 
 // Main function
 async function main() {
-  const queueName = 'go-queue-testing';
+  const queueName = 'go-testing';
   const messageCount = process.argv[2] ? parseInt(process.argv[2]) : null; // Message count (null for indefinite)
 
   console.log(`Writing messages to Redis queue '${queueName}'...`);
