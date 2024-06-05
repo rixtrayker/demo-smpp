@@ -5,54 +5,66 @@ const client = redis.createClient();
 client.on('error', (err) => console.log('Redis Client Error', err));
 client.connect();
 
-// Function to generate a random queue message
-function generateQueueMessage() {
-  const gateway = ['zain', 'stc', 'mobily'][Math.floor(Math.random() * 3)];
-  const phoneNumber = `+966${Math.floor(Math.random() * 1000000000)}`;
-  const text = `This is a sample text message from ${gateway}.`;
-  return { gateway, "phone_number":phoneNumber, text };
+// Function to generate a random list of phone numbers
+function generatePhoneNumbers(maxLength = 10) {
+  const numNumbers = Math.floor(Math.random() * maxLength) + 1;
+  const numbers = [];
+  for (let i = 0; i < numNumbers; i++) {
+    numbers.push(966 * 1e9 + Math.floor(Math.random() * 1e9));
+  }
+  return numbers;
+}
+
+// Function to create a QueueMessage object
+function createQueueMessage(gateway) {
+  return {
+    message_id: Math.random().toString(36).substring(2, 15), // Generate random message ID
+    provider: gateway,
+    sender: 'Your Sender Name', // Replace with your sender name
+    phone_numbers: generatePhoneNumbers(), // Map numbers to 1 for consistency
+    text: `This is a sample text message from ${gateway}.`,
+  };
 }
 
 // Function to write messages to the Redis queue
-async function writeToQueue(queueName, messageRate, duration) {
+async function writeToQueue(queueName, messageCount) {
   const queueKey = `queue:${queueName}`;
-  const start = new Date().getTime();
-  let messageSent = 0;
+  let totalSent = 0;
+  const providerCounts = {}; // Track messages sent per provider
 
-  while (true) {
-    const message = JSON.stringify(generateQueueMessage());
+  for (let i = 0; i < messageCount; i++) {
+    const gateway = ['zain', 'stc', 'mobily'][Math.floor(Math.random() * 3)];
+    const message = JSON.stringify(createQueueMessage(gateway));
     await client.rPush(queueKey, message);
-    messageSent++;
-
-    const now = new Date().getTime();
-    const elapsedTime = now - start;
-
-    if (duration && elapsedTime >= duration * 1000) {
-      console.log(`Sent ${messageSent} messages to ${queueName} in ${duration} seconds.`);
-      break;
-    }
-
-    const targetRate = Math.floor(Math.random() * (900 - 100 + 1)) + 100; // Random rate between 100 and 900 messages per second
-    const targetDelay = 1000 / targetRate;
-    await new Promise((resolve) => setTimeout(resolve, targetDelay));
+    totalSent++;
+    providerCounts[gateway] = (providerCounts[gateway] || 0) + 1;
   }
+
+  console.log(`Sent ${totalSent} messages to ${queueName}.`);
+
+  // Log total numbers and provider breakdown
+  console.log(`Total Numbers Sent: ${Object.values(providerCounts).reduce((a, b) => a + b, 0)}`);
+  for (const provider in providerCounts) {
+    console.log(`  - ${provider}: ${providerCounts[provider]}`);
+  }
+
+  client.quit();
 }
 
 // Main function
 async function main() {
   const queueName = 'go-queue-testing';
-  const duration = process.argv[2] ? parseInt(process.argv[2]) : null; // Duration in seconds (null for indefinite)
+  const messageCount = process.argv[2] ? parseInt(process.argv[2]) : null; // Message count (null for indefinite)
 
   console.log(`Writing messages to Redis queue '${queueName}'...`);
 
-  if (duration) {
-    console.log(`Running for ${duration} seconds.`);
+  if (messageCount) {
+    console.log(`Sending ${messageCount} messages.`);
   } else {
-    console.log('Running indefinitely. Press Ctrl+C to stop.');
+    console.log('Sending messages indefinitely. Press Ctrl+C to stop.');
   }
 
-  await writeToQueue(queueName, 100, duration);
-  client.quit();
+  await writeToQueue(queueName, messageCount || Infinity); // Use Infinity for indefinite
 }
 
 main();
