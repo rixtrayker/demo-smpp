@@ -59,7 +59,7 @@ func (c * ClientBase) SetHandler(handler *handlers.Handler) {
 func (c *ClientBase) Start() {
 	// c.state.Start()
 	// handlerFunc := c.handler.Handle
-	err := c.session.StartSession(c.cfg)
+	err := c.session.Start()
 	if err != nil {
 		return
 	}

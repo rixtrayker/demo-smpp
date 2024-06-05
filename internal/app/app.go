@@ -14,6 +14,7 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
+	"github.com/sirupsen/logrus"
 
 	// "github.com/rixtrayker/demo-smpp/internal/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/session"
@@ -52,8 +53,12 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
             }
 
             rw := response.NewResponseWriter()
-            sess := session.NewSession(provider, nil, session.WithResponseWriter(rw))
-            err := sess.StartSession(provider)
+            sess, err := session.NewSession(provider, nil, session.WithResponseWriter(rw))
+            if err != nil {
+                logrus.WithError(err).Error("Failed to create session for provider", provider.Name)
+            }
+
+            err = sess.Start()
             if err != nil {
                 log.Println("app.go Failed to create session for provider", provider.Name, err)
                 return
@@ -68,13 +73,13 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config){
     wg.Wait()
 }
 
-func StartWorker(ctx context.Context, cfg *config.Config) {
+func Start(ctx context.Context, cfg *config.Config) {
     var wg sync.WaitGroup
 
     wg.Add(1)
     go func() {
         <-ctx.Done()
-        log.Println("Main cancelled, stopping worker, ctx.Done()")
+        log.Println("Main cancelled, stopping app, ctx.Done()")
         for _, s := range appSessions {
             s.Stop()
         }
@@ -127,9 +132,9 @@ func StartWorker(ctx context.Context, cfg *config.Config) {
 }
 
 func test1800(ctx context.Context, wg *sync.WaitGroup, s *session.Session) {
-    fmt.Println("Sending 1200 messages")
+    fmt.Println("Sending 2000 messages")
     sem := make(chan struct{}, 1000)
-    for i := 0; i < 1200; i++ {
+    for i := 0; i < 2000; i++ {
       select {
       case <-ctx.Done():
         log.Println("Stopping message sending")
@@ -182,7 +187,7 @@ func Test_redis(ctx context.Context, wg *sync.WaitGroup) error {
     go func() {
         defer wg.Done()
         <-ctx.Done()
-        fmt.Println("Stopping redis worker")
+        fmt.Println("Stopping redis app")
     }()
 
     defer wg.Done()

@@ -17,7 +17,8 @@ var responseWriter *Writer
 var myDb *gorm.DB
 
 type ResponseWriter interface {
-	WriteResponse(msg dtos.ReceiveLog)
+	WriteResponse(msg *dtos.ReceiveLog)
+	Close()
 }
 
 type Writer struct{
@@ -83,7 +84,6 @@ func (w *Writer) writeDB(msg *dtos.ReceiveLog){
 		logrus.Printf("failed to insert data: %v\n", tx.Error)
 	}
 }
-
 
 func (w* Writer) Close(){
 	w.wg.Wait()
