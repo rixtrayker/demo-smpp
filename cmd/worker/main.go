@@ -30,13 +30,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	go func() {
-		defer wg.Done()
 		<-quit
 		logrus.Println("Shutting down gracefully...")
 		cancel()
+		wg.Wait()
+		logrus.Println("Worker stopped. Exiting.")
 	}()
 
 	myDb, err = db.GetDBInstance()
@@ -53,11 +53,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		app.Start(ctx, cfg)
-		// if err := app.Start(ctx, cfg); err != nil {
-		// 	logrus.Errorf("worker error: %v", err)
-		// }
 	}()
 
 	wg.Wait()
-	logrus.Println("Worker stopped. Exiting.")
 }
