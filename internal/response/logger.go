@@ -122,3 +122,7 @@ func (l *Logger) closeLogFile() {
         l.logFile = nil
     }
 }
+
+func Close() {
+    (*instance).closeLogFile()
+}
