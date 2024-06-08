@@ -11,6 +11,7 @@ import (
 )
 
 func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
+	defer s.deliveryWg.Done()
 	msg, err := pd.Message.GetMessage()
 	if err != nil {
 		logError(err, pd)
@@ -107,6 +108,7 @@ func (s *Session) deliverPort(pd *pdu.DeliverSM) error {
 		GatewayHistory:  []string{s.gateway},
 	}
 
+	s.wg.Add(1)
 	s.portMessage(msg)
 	return nil
 }

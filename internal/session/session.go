@@ -37,6 +37,7 @@ type Session struct {
 	maxRetries        int
 	responseWriter    *response.Writer
 	wg                sync.WaitGroup
+	deliveryWg        sync.WaitGroup
 	auth              gosmpp.Auth
 	enquireLink       time.Duration
 	readTimeout       time.Duration
@@ -48,6 +49,7 @@ type Session struct {
 
 type CloseSignals struct {
 	streamClose chan struct{}
+	portedClosed chan struct{}
 }
 
 type MessageStatus struct {
@@ -108,6 +110,7 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		stop:              make(chan struct{}),
 		messagesStatus:    make(map[int32]*MessageStatus),
 		wg:                sync.WaitGroup{},
+		deliveryWg:		   sync.WaitGroup{},
 		sessionType:       SessionType(cfg.SessionType),
 		enquireLink:       5 * time.Second,
 		readTimeout:       10 * time.Second,
@@ -243,6 +246,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 		case *pdu.DataSM:
 			return pd.GetResponse(), false
 		case *pdu.DeliverSM:
+			s.deliveryWg.Add(1)
 			s.HandleDeliverSM(pd)
 			return pd.GetResponse(), false
 		}
@@ -293,7 +297,8 @@ func (s *Session) Stop() {
 	
     s.wg.Wait()
 
-    close(s.resendChannel) // allow redis to close
+	<-s.shutdown.portedClosed
+	s.deliveryWg.Wait()
 	if s.responseWriter != nil {
 		(*s.responseWriter).Close()
 	}
