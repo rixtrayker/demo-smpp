@@ -70,7 +70,7 @@ func (s *Session) SendStream(messages <-chan queue.MessageData) {
 	for i := 0; i < cap(sem); i++ {
 		sem <- struct{}{}
 	}
-	close(s.shutdown)
+	close(s.shutdown.streamClose)
 }
 
 func (s *Session) handleSubmitSMResp(pd *pdu.SubmitSMResp) {
@@ -103,6 +103,7 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		logrus.Info("SubmitSMResp Received")
 	} else {
 		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway == "stc" {
+			s.wg.Add(1)
 			go s.portMessage(messageStatus)
 		}
 	}
@@ -115,10 +116,10 @@ func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
 
 func (s *Session) ClosePorted() {
 	close(s.resendChannel)
+	close(s.shutdown.portedClosed)
 }
 
 func (s *Session) portMessage(messageStatus *MessageStatus) {
-	s.wg.Add(1)
 	defer s.wg.Done()
 	gateway, err := s.portGateway(messageStatus.GatewayHistory)
 	if err != nil {
@@ -145,19 +146,42 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 }
 
 func (s *Session) portGateway(history []string) (string, error) {
+	alternatives := []string{"zain", "mobily"}
+
 	switch len(history) {
 	case 0:
 		return "", errors.New("gateway history is empty, unable to port message")
 	case 1:
-		if s.gateway != history[0] {
-			return "mobily", nil
+		switch history[0] {
+		case "stc":
+			// If STC, return Zain
+			return alternatives[0], nil
+		case alternatives[0]:
+			// If Zain, return Mobily
+			return alternatives[1], nil
+		case alternatives[1]:
+			// If Mobily, return Zain
+			return alternatives[0], nil
 		}
 	case 2:
-		if s.gateway != history[0] && s.gateway != history[1] {
-			return "stc", nil
+		if contains(history, "stc") {
+			return alternatives[1], nil
+		}
+		return "stc", nil
+	case 3:
+		return "", errors.New("unable to port message, tried all gateways, len: 3")
+	}
+	return "", errors.New("invalid gateway history length: " + strconv.Itoa(len(history)))
+}
+
+// contains checks if a slice contains a specific string
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
 		}
 	}
-	return "", errors.New("unable to port message, tried all gateways")
+	return false
 }
 
 func newSubmitSM(sender, number, message string) *pdu.SubmitSM {
