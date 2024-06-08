@@ -15,9 +15,11 @@ database_config:
   dbname: "wifilter"
 
 providers:
-  - name: "PROVIDER_A"
+  - PROVIDER_A:
+    name: "PROVIDER_A"
     session_type: "transceiver"
-    smsc: "provider_a.smsc.address"
+    address: "localhost"
+    port: 2775
     system_id: "provider_a_system_id"
     password: "provider_a_password"
     system_type: "provider_a_system_type"
@@ -27,9 +29,11 @@ providers:
     queues:
       - "queue_a"
 
-  - name: "PROVIDER_B"
+  - PROVIDER_B:
+    name: "PROVIDER_B"
     session_type: "receiver"
-    smsc: "provider_b.smsc.address"
+    address: "localhost"
+    port: 2775
     system_id: "provider_b_system_id"
     password: "provider_b_password"
     system_type: "provider_b_system_type"

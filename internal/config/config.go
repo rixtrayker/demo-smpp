@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/spf13/viper"
@@ -33,6 +34,8 @@ type Provider struct {
 	Name           string
 	SessionType    string
 	SMSC           string
+	Address 	   string 
+	Port 		   int
 	SystemID       string
 	Password       string
 	SystemType     string
@@ -77,8 +80,8 @@ func setDefaults() {
 	viper.SetDefault("database_config.port", 3306)
 	viper.SetDefault("database_config.host", "localhost")
 	viper.SetDefault("database_config.user", "root")
-	viper.SetDefault("database_config.password", "password")
-	viper.SetDefault("database_config.dbname", "smpp_db")
+	viper.SetDefault("database_config.password", "")
+	viper.SetDefault("database_config.dbname", "go_client")
 }
 
 func loadSMPPConfig() SMPPConfig {
@@ -105,5 +108,10 @@ func loadProvidersConfig() []Provider {
 	if err := viper.UnmarshalKey("providers", &providers); err != nil {
 		log.Printf("Error unmarshaling providers config, %s", err)
 	}
+	
+	for _, p := range providers {
+		p.SMSC = p.Address + ":" + fmt.Sprintf("%d", p.Port)
+	}
+
 	return providers
 }
