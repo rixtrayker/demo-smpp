@@ -8,6 +8,7 @@ import (
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
@@ -22,26 +23,31 @@ const (
 )
 
 type Session struct {
-	gateway            string
-	sessionType        SessionType
-	maxOutstanding     int
-	hasOutstanding     bool
-	outstandingCh      chan struct{}
-	resendChannel      chan queue.MessageData
-	mu                 sync.Mutex
-	handler            *PDUHandler
-	stop               chan struct{}
-	concatenated       map[uint8][]string
-	messagesStatus     map[int32]*MessageStatus
-	maxRetries         int
-	responseWriter     *response.Writer
-	wg                 sync.WaitGroup
-	auth               gosmpp.Auth
-	enquireLink        time.Duration
-	readTimeout        time.Duration
-	rebindingInterval  time.Duration
-	portGateways       []string
-	smppSessions       SMPPSessions
+	gateway           string
+	sessionType       SessionType
+	maxOutstanding    int
+	hasOutstanding    bool
+	outstandingCh     chan struct{}
+	resendChannel     chan queue.MessageData
+	mu                sync.Mutex
+	handler           *PDUHandler
+	stop              chan struct{}
+	concatenated      map[uint8][]string
+	messagesStatus    map[int32]*MessageStatus
+	maxRetries        int
+	responseWriter    *response.Writer
+	wg                sync.WaitGroup
+	auth              gosmpp.Auth
+	enquireLink       time.Duration
+	readTimeout       time.Duration
+	rebindingInterval time.Duration
+	portGateways      []string
+	smppSessions      SMPPSessions
+	shutdown 		  CloseSignals
+}
+
+type CloseSignals struct {
+	streamClose chan struct{}
 }
 
 type MessageStatus struct {
@@ -92,23 +98,23 @@ func WithResponseWriter(responseWriter *response.Writer) Option {
 
 func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session, error) {
 	session := &Session{
-		gateway:         cfg.Name,
-		concatenated:    make(map[uint8][]string),
-		handler:         h,
-		maxOutstanding:  cfg.MaxOutStanding,
-		hasOutstanding:  cfg.HasOutStanding,
-		maxRetries:      cfg.MaxRetries,
-		outstandingCh:   make(chan struct{}, cfg.MaxOutStanding),
-		stop:            make(chan struct{}),
-		messagesStatus:  make(map[int32]*MessageStatus),
-		wg:              sync.WaitGroup{},
-		sessionType:     SessionType(cfg.SessionType),
-		enquireLink:     5 * time.Second,
-		readTimeout:     10 * time.Second,
+		gateway:           cfg.Name,
+		concatenated:      make(map[uint8][]string),
+		handler:           h,
+		maxOutstanding:    cfg.MaxOutStanding,
+		hasOutstanding:    cfg.HasOutStanding,
+		maxRetries:        cfg.MaxRetries,
+		outstandingCh:     make(chan struct{}, cfg.MaxOutStanding),
+		stop:              make(chan struct{}),
+		messagesStatus:    make(map[int32]*MessageStatus),
+		wg:                sync.WaitGroup{},
+		sessionType:       SessionType(cfg.SessionType),
+		enquireLink:       5 * time.Second,
+		readTimeout:       10 * time.Second,
 		rebindingInterval: 600 * time.Second,
-		resendChannel:   make(chan queue.MessageData),
-		portGateways:    []string{"zain", "mobily", "stc"},
-		smppSessions:    SMPPSessions{},
+		resendChannel:     make(chan queue.MessageData),
+		portGateways:      []string{"zain", "mobily", "stc"},
+		smppSessions:      SMPPSessions{},
 	}
 
 	for _, option := range options {
@@ -139,8 +145,7 @@ func (s *Session) Start() error {
 		case <-s.stop:
 			return errors.New("session stopped")
 		default:
-			err := s.connectSessions()
-			if err != nil {
+			if err := s.connectSessions(); err != nil {
 				delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
 				logrus.WithError(err).Errorf("Failed to create session for provider %s", s.gateway)
 				time.Sleep(delay)
@@ -190,13 +195,13 @@ func (s *Session) connectSessions() error {
 
 func (s *Session) getSettings() gosmpp.Settings {
 	return gosmpp.Settings{
-		EnquireLink:       s.enquireLink,
-		ReadTimeout:       s.readTimeout,
-		OnAllPDU:          handlePDU(s),//s.handler.HandlePDU,
-		OnSubmitError:     s.handleSubmitError,
-		OnReceivingError:  s.handleReceivingError,
-		OnRebindingError:  s.handleRebindingError,
-		OnClosed:          s.handleClosed,
+		EnquireLink:      s.enquireLink,
+		ReadTimeout:      s.readTimeout,
+		OnAllPDU:         handlePDU(s),
+		OnSubmitError:    s.handleSubmitError,
+		OnReceivingError: s.handleReceivingError,
+		OnRebindingError: s.handleRebindingError,
+		OnClosed:         s.handleClosed,
 	}
 }
 
@@ -213,57 +218,43 @@ func (s *Session) handleRebindingError(err error) {
 }
 
 func (s *Session) handleClosed(state gosmpp.State) {
-    logrus.Info("Session closed: ", state)
-}
-
-
-func handlePDU2(pd pdu.PDU) (pdu.PDU, bool) {
-    return pd.GetResponse(), true
+	logrus.Info("Session closed: ", state)
 }
 
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
-    return func(p pdu.PDU) (pdu.PDU, bool) {
-        switch pd := p.(type) {
-        case *pdu.BindResp:
-            // logrus.Info("BindResp Received")
-        case *pdu.Unbind:
-            logrus.Info("Unbind Received")
-            return pd.GetResponse(), true
-        case *pdu.UnbindResp:
-            // fmt.Println("UnbindResp Received")
-        case *pdu.SubmitSMResp:
-            s.handleSubmitSMResp(pd)
-            return pd.GetResponse(), false
-            // fmt.Println("SubmitSMResp Received")
-        case *pdu.GenericNack:
-            // fmt.Println("GenericNack Received")
-        case *pdu.EnquireLinkResp:
-            // fmt.Println("EnquireLinkResp Received")
-        case *pdu.EnquireLink:
-            // fmt.Println("EnquireLink Received")
-            return pd.GetResponse(), false
-        case *pdu.DataSM:
-            // fmt.Println("DataSM Received")
-            return pd.GetResponse(), false
-        case *pdu.DeliverSM:
-            s.HandleDeliverSM(pd)
-            return pd.GetResponse(), false
-        }
-        return nil, false
-    }
+	return func(p pdu.PDU) (pdu.PDU, bool) {
+		switch pd := p.(type) {
+		case *pdu.BindResp:
+			// Handle BindResp if needed
+		case *pdu.Unbind:
+			logrus.Info("Unbind Received")
+			return pd.GetResponse(), true
+		case *pdu.UnbindResp:
+			// Handle UnbindResp if needed
+		case *pdu.SubmitSMResp:
+			s.handleSubmitSMResp(pd)
+			return pd.GetResponse(), false
+		case *pdu.GenericNack:
+			// Handle GenericNack if needed
+		case *pdu.EnquireLinkResp:
+			// Handle EnquireLinkResp if needed
+		case *pdu.EnquireLink:
+			return pd.GetResponse(), false
+		case *pdu.DataSM:
+			return pd.GetResponse(), false
+		case *pdu.DeliverSM:
+			s.HandleDeliverSM(pd)
+			return pd.GetResponse(), false
+		}
+		return nil, false
+	}
 }
 
-func (s *Session) Stop() {
-    close(s.outstandingCh)
-    close(s.stop)
 
-    if s.smppSessions.transceiver != nil {
-        s.smppSessions.transceiver.Close()
-    }
-    s.wg.Wait()
-
-    close(s.resendChannel)
-    (*s.responseWriter).Close()
+func (s *Session) writeLog(log *dtos.ReceiveLog) {
+	if s.responseWriter != nil {
+		(*s.responseWriter).WriteResponse(log)
+	}
 }
 
 type Handler struct {
@@ -277,28 +268,33 @@ func (s *Session) PushResendChannel(msg queue.MessageData) {
 	s.resendChannel <- msg
 }
 
-func (s *Session) PopResendChannel() queue.MessageData {
-	msg := <-s.resendChannel
-	return msg
+// func (s *Session) PopResendChannel() queue.MessageData {
+// 	msg := <-s.resendChannel
+// 	return msg
+// }
+
+func (s *Session) ShutdownSignals() {
+	<-s.shutdown.streamClose
 }
 
-// func stream StreamPorted() chan queue.MessageData {
-func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
-	// messages := make(chan queue.MessageData)
-	errors := make(chan error)
+func (s *Session) Stop() {
+	s.ShutdownSignals()
+	if s.smppSessions.transceiver != nil {
+		s.smppSessions.transceiver.Close()
+	}
+	if s.smppSessions.receiver != nil {
+		s.smppSessions.receiver.Close()
+	}
+	if s.smppSessions.transmitter != nil {
+		s.smppSessions.transmitter.Close()
+	}
+	close(s.outstandingCh)
+	close(s.stop) // who is lestinging to this channel?
+	
+    s.wg.Wait()
 
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case msg := <-s.resendChannel:
-	// 			messages <- msg
-	// 		case <-s.stop:
-	// 			close(messages)
-	// 			close(errors)
-	// 			return
-	// 		}
-	// 	}
-	// }()
-
-	return s.resendChannel, errors
+    close(s.resendChannel) // allow redis to close
+	if s.responseWriter != nil {
+		(*s.responseWriter).Close()
+	}
 }
