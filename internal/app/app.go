@@ -44,7 +44,7 @@ func initClients(ctx context.Context, cfg *config.Config) {
 			client, err := clients.NewClientBase(ctx, provider, provider.Name)
 
 			if err != nil {
-				logrus.WithError(err).Error("Failed to create client for provider", provider.Name)
+				logrus.WithError(err).Error("Failed to create client for provider ", provider.Name)
 				return
 			}
 
@@ -64,7 +64,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 	go handleShutdown(ctx)
 
 	initClients(ctx, cfg)
-
+	
 	
 }
 

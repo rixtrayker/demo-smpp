@@ -3,12 +3,10 @@ package clients
 import (
 	"context"
 	"errors"
-	"strconv"
 	"sync"
 
 	"github.com/rixtrayker/demo-smpp/internal/app/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/rixtrayker/demo-smpp/internal/session"
@@ -91,15 +89,7 @@ func(c *ClientBase) runPorted(){
 	for msg := range msg {
 		err := c.worker.Push(c.ctx, "ported", &msg)
 		if err != nil {
-			logrus.WithError(err).Error("failed sending message")
-			c.session.Write(&dtos.ReceiveLog{
-				MessageID: strconv.Itoa(msg.Id),
-				Gateway: msg.Gateway,
-				MobileNo: msg.Number,
-				MessageState: "porting failed",
-				ErrorCode: err.Error(),
-				Data: msg.Text,
-			})
+			logrus.WithError(err).Error("pushing failed failed sending message")
 		}
 	}
 	c.session.ClosePorted()

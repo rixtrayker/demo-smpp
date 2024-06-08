@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/linxGnu/gosmpp/pdu"
@@ -13,6 +14,7 @@ import (
 func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
 	defer s.deliveryWg.Done()
 	msg, err := pd.Message.GetMessage()
+	status := ""
 	if err != nil {
 		logError(err, pd)
 		return
@@ -22,10 +24,11 @@ func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
 	if errCode == "021" && strings.EqualFold(s.gateway, "STC") {
 		if err := s.deliverPort(pd); err != nil {
 			logrus.WithError(err).Info("Error in deliverPort")
+			status = "Porting Failed"
 		}
 	}
 
-	data := s.prepareResult(pd)
+	data := s.prepareResult(pd, status)
 	s.Write(&data)
 }
 
@@ -63,24 +66,26 @@ func getMessageData(pd *pdu.DeliverSM) (string, string, string, error) {
 	return id, dlvrd, errCode, nil
 }
 
-func (s *Session) Write(rl *dtos.ReceiveLog) {
-	(*s.responseWriter).WriteResponse(rl)
-}
-
-func (s *Session) prepareResult(pd *pdu.DeliverSM) dtos.ReceiveLog {
+func (s *Session) prepareResult(pd *pdu.DeliverSM, status string) dtos.ReceiveLog {
 	msgID := getReceiptedMessageID(pd)
 	mobileNo := pd.SourceAddr.Address()
 	submitID, dlvrd, errCode, err := getMessageData(pd)
 	if err != nil {
 		logrus.WithError(err).Info("Got error when getting DeliverSM message")
 	}
-
-	status := "Undelivered"
-	if dlvrd == "000" {
-		status = "Delivered"
+	if status == "" {
+		if dlvrd == "000" {
+			status = "Delivered"
+		} else {
+			status = "Undelivered"
+		}	
 	}
 
 	return dtos.ReceiveLog{
+		// id will be added periodically
+		// join the DeliverSM with its SubmitSMResp on message_id
+		// SystemMessageID: 
+		Gateway:	  s.gateway,
 		MessageID:    msgID,
 		MobileNo:     mobileNo,
 		MessageState: status,
@@ -89,23 +94,39 @@ func (s *Session) prepareResult(pd *pdu.DeliverSM) dtos.ReceiveLog {
 	}
 }
 
+// stc on error code 21
 func (s *Session) deliverPort(pd *pdu.DeliverSM) error {
 	msgID := getReceiptedMessageID(pd)
 
-	var dlrSms models.DlrSms
-	result := db.DB.Select("*").Where("messageId = ?", msgID).First(&dlrSms)
+	var dlrSms []models.DlrSms 
+	result := db.DB.Where("messageId = ?", msgID).Where("mobileNo = ?", pd.DestAddr.Address()).Where("messageState = ?", "Sent").Find(&dlrSms)
+	
+	// if dlrSms len is 3 so we tried all gateway and don't port return an error
+	if len(dlrSms) == 3 {
+		return errors.New("You tried 3 gateways on msgID:" + msgID)
+	}
+
+
+	// history := []string{}
+
+	// for _, dlr := range dlrSms {
+	// 	history = append(history, dlr.Gateway)
+	// }
+
+	history := []string{"STC"}
+
 	if result.Error != nil {
 		logrus.WithError(result.Error).Info("Error getting DlrSms")
 		return result.Error
 	}
 
 	msg := &MessageStatus{
-		SystemMessageID: int(dlrSms.ID),
+		SystemMessageID: dlrSms[0].ID,
 		Sender:          pd.SourceAddr.Address(),
 		Number:          pd.DestAddr.Address(),
-		Text:            dlrSms.Data,
+		Text:            dlrSms[0].Data,
 		MessageID:       msgID,
-		GatewayHistory:  []string{s.gateway},
+		GatewayHistory:  history,
 	}
 
 	s.wg.Add(1)

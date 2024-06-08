@@ -54,7 +54,7 @@ type CloseSignals struct {
 
 type MessageStatus struct {
 	MessageID       string
-	SystemMessageID int
+	SystemMessageID int64
 	Sender          string
 	Text            string
 	Status          string
@@ -254,8 +254,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 	}
 }
 
-
-func (s *Session) writeLog(log *dtos.ReceiveLog) {
+func (s *Session) Write(log *dtos.ReceiveLog) {
 	if s.responseWriter != nil {
 		(*s.responseWriter).WriteResponse(log)
 	}

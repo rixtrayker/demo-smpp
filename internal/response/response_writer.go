@@ -55,12 +55,13 @@ func (w *Writer) WriteResponse(msg *dtos.ReceiveLog){
 
 func (w *Writer) writeLog(msg *dtos.ReceiveLog){
 	loggingFields := logrus.Fields{
-		"Gateway":      msg.Gateway,
-		"MessageID":    msg.MessageID,
-		"MessageState": msg.MessageState,
-		"ErrorCode":    msg.ErrorCode,
-		"MobileNo":     msg.MobileNo,
-		"Data":         msg.Data,
+		"Gateway":      	msg.Gateway,
+		"SystemMessageID:": msg.SystemMessageID,
+		"MessageID":    	msg.MessageID,
+		"MessageState": 	msg.MessageState,
+		"ErrorCode":    	msg.ErrorCode,
+		"MobileNo":     	msg.MobileNo,
+		"Data":         	msg.Data,
 	}
 
 	w.logger.WithFields(loggingFields).Info(" new dlr ")
@@ -71,6 +72,8 @@ func (w *Writer) writeDB(msg *dtos.ReceiveLog){
 	mobileNo, _  := strconv.ParseInt(msg.MobileNo, 10, 64)
 	// todo: log error
 	dlrSms := &models.DlrSms{
+		SystemMessageID: msg.SystemMessageID,
+		Gateway:      msg.Gateway,
 		MessageID:    msg.MessageID,
 		MessageState: msg.MessageState,
 		ErrorCode:    msg.ErrorCode,

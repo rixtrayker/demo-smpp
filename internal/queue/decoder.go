@@ -48,7 +48,7 @@ type QueueMessage struct {
 }
 
 type MessageData struct {
-	Id             int      `json:"id"`
+	Id             int64     `json:"id"`
 	Gateway        string   `json:"gateway"`
 	Sender         string   `json:"sender"`
 	Number         string   `json:"number"`

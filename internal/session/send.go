@@ -11,9 +11,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ported redirect: zain -> mobily -> stc
-var gateways = []string{"zain", "mobily", "stc"}
-
 func (s *Session) Send(msg queue.MessageData) {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
 	logrus.Infof("Sending message to %s", msg.Number)
@@ -88,25 +85,31 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 	s.mu.Lock()
 	messageStatus := s.messagesStatus[ref]
 	s.mu.Unlock()
+	
 	errCode := pd.CommandStatus.String()
-	id := strconv.Itoa(messageStatus.SystemMessageID)
+	status := ""
 
-	s.Write(&dtos.ReceiveLog{
-		MessageID:    id,
-		Gateway:      s.gateway,
-		MobileNo:     messageStatus.Number,
-		MessageState: "Sent",
-		ErrorCode:    errCode,
-	})
-
-	if pd.CommandStatus == 0 {
-		logrus.Info("SubmitSMResp Received")
+	if pd.IsOk() {
+		status = "Sent"
 	} else {
-		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway == "stc" {
+		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" {
 			s.wg.Add(1)
 			go s.portMessage(messageStatus)
+			status = "Ported"
+		} else {
+			status = "Failed"
 		}
 	}
+
+	s.Write(&dtos.ReceiveLog{
+		SystemMessageID: messageStatus.SystemMessageID,
+		MessageID:    pd.MessageID,
+		Gateway:      s.gateway,
+		MobileNo:     messageStatus.Number,
+		MessageState: status,
+		ErrorCode:    errCode,
+		Data:         messageStatus.Text,
+	})
 }
 
 func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
@@ -124,11 +127,13 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 	gateway, err := s.portGateway(messageStatus.GatewayHistory)
 	if err != nil {
 		s.Write(&dtos.ReceiveLog{
-			MessageID:    strconv.Itoa(messageStatus.SystemMessageID),
-			Gateway:      s.gateway,
-			MobileNo:     messageStatus.Number,
-			MessageState: "Failed",
-			ErrorCode:    "Unable to port message",
+			MessageID:  	 messageStatus.MessageID,
+			SystemMessageID: messageStatus.SystemMessageID,
+			Gateway:      	 s.gateway,
+			MobileNo:     	 messageStatus.Number,
+			MessageState: 	 "Porting Failed",
+			ErrorCode:    	 "Unable to port message",
+			Data:        	 messageStatus.Text,
 		})
 
 		logrus.Error(err)
