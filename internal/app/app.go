@@ -2,23 +2,19 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"reflect"
 	"sync"
 
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/rixtrayker/demo-smpp/internal/queue"
-	"github.com/rixtrayker/demo-smpp/internal/response"
-	"github.com/rixtrayker/demo-smpp/internal/session"
+	clients "github.com/rixtrayker/demo-smpp/internal/gateway"
 	"github.com/sirupsen/logrus"
 )
 
-var appSessions map[string]*session.Session
-var shutdownWG sync.WaitGroup
+var appClients map[string]*clients.ClientBase
 
-func InitSessionsAndClients(ctx context.Context, cfg *config.Config) {
-	appSessions = make(map[string]*session.Session)
+func initClients(ctx context.Context, cfg *config.Config) {
+	appClients = make(map[string]*clients.ClientBase)
 	if cfg == nil {
 		panic("Config is nil")
 	}
@@ -45,21 +41,17 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) {
 				log.Println("Provider", provider.Name)
 			}
 
-			rw := response.NewResponseWriter()
-			sess, err := session.NewSession(provider, nil, session.WithResponseWriter(rw))
+			client, err := clients.NewClientBase(ctx, provider, provider.Name)
+
 			if err != nil {
-				logrus.WithError(err).Error("Failed to create session for provider", provider.Name)
+				logrus.WithError(err).Error("Failed to create client for provider", provider.Name)
 				return
 			}
 
-			err = sess.Start()
-			if err != nil {
-				log.Println("app.go Failed to create session for provider", provider.Name, err)
-				return
-			}
-			if sess != nil {
+			client.Start()
+			if client != nil {
 				mu.Lock()
-				appSessions[provider.Name] = sess
+				appClients[provider.Name] = client
 				mu.Unlock()
 			}
 		}(provider)
@@ -71,61 +63,16 @@ func InitSessionsAndClients(ctx context.Context, cfg *config.Config) {
 func Start(ctx context.Context, cfg *config.Config) {
 	go handleShutdown(ctx)
 
-	InitSessionsAndClients(ctx, cfg)
+	initClients(ctx, cfg)
 
-	shutdownWG.Add(1)
-	go func() {
-		defer shutdownWG.Done()
-		test1800(ctx)
-	}()
-
-	shutdownWG.Wait()
+	
 }
 
 func handleShutdown(ctx context.Context) {
 	<-ctx.Done()
 	log.Println("Context canceled, initiating shutdown...")
-	for _, s := range appSessions {
-		s.Stop()
+	for _, c := range appClients {
+		c.Stop()
 	}
 	log.Println("All sessions stopped.")
-}
-
-func test1800(ctx context.Context) {
-	fmt.Println("Sending 2000 messages")
-	sem := make(chan struct{}, 1000)
-	for i := 0; i < 2000; i++ {
-		select {
-		case <-ctx.Done():
-			log.Println("Stopping message sending")
-			return
-		default:
-			shutdownWG.Add(1)
-			sem <- struct{}{}
-			go func(i int) {
-				defer shutdownWG.Done()
-				defer func() { <-sem }()
-				msg := fmt.Sprintf("msg %d", i)
-				msgData := queue.MessageData{
-					Sender:         "sender",
-					Number:         "number",
-					Text:           msg,
-					Gateway:        "gateway",
-					GatewayHistory: []string{},
-				}
-
-				for _, sess := range appSessions {
-					if err := sess.Send(msgData); err != nil {
-						log.Println("Failed to send message:", err)
-					}
-				}
-			}(i)
-		}
-	}
-
-	for i := 0; i < cap(sem); i++ {
-		sem <- struct{}{}
-	}
-
-	close(sem)
 }
