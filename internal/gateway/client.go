@@ -29,14 +29,13 @@ type ClientBase struct {
 	worker  *queue.Worker
 }
 
-func NewClientBase(ctx context.Context, name string) (*ClientBase, error) {
+func NewClientBase(ctx context.Context, cfg config.Provider, name string) (*ClientBase, error) {
 	if ctx == nil {
 		return nil, errors.New("context cannot be nil")
 	}
 	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
+	// ctx, cancel = context.WithCancel(ctx)
 	
-	cfg := config.GetProviderCfg(name)
 	rw := response.NewResponseWriter()
 	sess, err := session.NewSession(cfg, nil, session.WithResponseWriter(rw))
 	if err != nil {
@@ -78,29 +77,12 @@ func (c *ClientBase) Start() {
 		defer c.wg.Done()
 		c.runPorted()
 	}()
-    messages, errors := w.Stream()
+    messages, _ := w.Stream()
 
 	defer c.Stop()
 
-	for {
-		select {
-			case <-c.ctx.Done():
-			    c.wg.Wait()
-				return
-			case msg := <-messages:
-				err := c.session.Send(msg)
-				if err != nil {
-					logrus.WithError(err).Error("failed sending message")
-				}
-			case err := <-errors:
-				logrus.WithError(err).Error("failed reading from queue")
-			}
-	}
-	
-	
-
-	
-	// c.wg.Wait()
+	c.session.SendStream(messages)
+	c.wg.Wait()
 	// for wait random time and check len c.session.ResendChannel then close it
 }
 
@@ -120,6 +102,7 @@ func(c *ClientBase) runPorted(){
 			})
 		}
 	}
+	c.session.ClosePorted()
 }
 
 func (c *ClientBase) Stop() {
