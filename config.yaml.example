@@ -1,0 +1,46 @@
+rate_limit: 100
+redis_url: "redis://localhost:6379"
+
+smpp_config:
+  smsc: "your.smsc.address"
+  system_id: "your_system_id"
+  password: "your_password"
+  system_type: "your_system_type"
+
+database_config:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "root"
+  dbname: "wifilter"
+
+providers:
+  - PROVIDER_A:
+    name: "PROVIDER_A"
+    session_type: "transceiver"
+    address: "localhost"
+    port: 2775
+    system_id: "provider_a_system_id"
+    password: "provider_a_password"
+    system_type: "provider_a_system_type"
+    max_outstanding: 100
+    has_outstanding: true
+    max_retries: 3
+    queues:
+      - "queue_a"
+
+  - PROVIDER_B:
+    name: "PROVIDER_B"
+    session_type: "receiver"
+    address_range:
+      - "localhost"
+      - "localhost2"
+    port: 2775
+    system_id: "provider_b_system_id"
+    password: "provider_b_password"
+    system_type: "provider_b_system_type"
+    max_outstanding: 50
+    has_outstanding: false
+    max_retries: 2
+    queues:
+      - "queue_b"
