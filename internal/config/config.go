@@ -42,6 +42,8 @@ type Provider struct {
 	SystemID       string   `koanf:"system_id"`
 	Password       string   `koanf:"password"`
 	SystemType     string   `koanf:"system_type"`
+	RateLimit      int      `koanf:"rate_limit"`
+	BurstLimit     int      `koanf:"burst_limit"`
 	MaxOutStanding int      `koanf:"max_outstanding"`
 	HasOutStanding bool     `koanf:"has_outstanding"`
 	MaxRetries     int      `koanf:"max_retries"`
@@ -65,6 +67,8 @@ func LoadConfig() *Config {
 		log.Fatalf("Error unmarshaling config: %v", err)
 	}
 
+	setDefaults(config)
+
 	// Derive SMSC field in providers
 	for i := range config.ProvidersConfig {
 		config.ProvidersConfig[i].SMSC = fmt.Sprintf("%s:%d", config.ProvidersConfig[i].Address, config.ProvidersConfig[i].Port)
@@ -72,6 +76,38 @@ func LoadConfig() *Config {
 	}
 
 	return config
+}
+
+func setDefaults(cfg *Config) {
+	if cfg.RateLimit == 0 {
+		cfg.RateLimit = 1000
+	}
+
+	for i := range cfg.ProvidersConfig {
+		p := &cfg.ProvidersConfig[i]
+		if p.RateLimit == 0 {
+			p.RateLimit = 100
+		}
+		if p.BurstLimit == 0 {
+			p.BurstLimit = 10
+		}
+		if p.MaxOutStanding == 0 {
+			p.MaxOutStanding = 1000
+		}
+		if !p.HasOutStanding {
+			p.HasOutStanding = true
+		}
+		if p.MaxRetries == 0 {
+			p.MaxRetries = 3
+		}
+		if p.Queues == nil {
+			p.Queues = []string{"default"}
+		}
+	}
+
+	if cfg.DatabaseConfig.Port == 0 {
+		cfg.DatabaseConfig.Port = 5432 // default port for PostgreSQL
+	}
 }
 
 func logProviderConfig(provider Provider) {
@@ -82,6 +118,11 @@ func logProviderConfig(provider Provider) {
 		"SystemID":       provider.SystemID,
 		"Password":       provider.Password,
 		"SystemType":     provider.SystemType,
+		"RateLimit":      provider.RateLimit,
+		"BurstLimit":     provider.BurstLimit,
 		"MaxOutStanding": provider.MaxOutStanding,
+		"HasOutStanding": provider.HasOutStanding,
+		"MaxRetries":     provider.MaxRetries,
+		"Queues":         provider.Queues,
 	}).Info("Provider")
 }

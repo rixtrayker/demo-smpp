@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"strconv"
 
@@ -48,6 +49,15 @@ func (s *Session) send(submitSM *pdu.SubmitSM) error {
 		return s.smppSessions.transmitter.Transmitter().Submit(submitSM)
 	}
 	return errors.New("no valid SMPP session found")
+}
+
+// allow send func
+
+func (s *Session) allowSend() bool {
+	if err := s.limiter.Wait(context.Background()); err == nil {
+		return true
+	}
+	return false
 }
 
 // SendStream function takes a channel of MessageData and sends the messages using a limited number of goroutines

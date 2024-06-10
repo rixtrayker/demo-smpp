@@ -12,6 +12,7 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
 )
 
 type SessionType string
@@ -25,6 +26,8 @@ const (
 type Session struct {
 	gateway           string
 	sessionType       SessionType
+	limiter       *rate.Limiter
+	rateLimit 		  int
 	maxOutstanding    int
 	hasOutstanding    bool
 	outstandingCh     chan struct{}
@@ -103,6 +106,8 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		gateway:           cfg.Name,
 		concatenated:      make(map[uint8][]string),
 		handler:           h,
+		limiter:       rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.BurstLimit),
+		rateLimit:         cfg.RateLimit,
 		maxOutstanding:    cfg.MaxOutStanding,
 		hasOutstanding:    cfg.HasOutStanding,
 		maxRetries:        cfg.MaxRetries,
