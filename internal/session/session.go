@@ -304,6 +304,13 @@ func (s *Session) ShutdownSignals() {
 	<-s.shutdown.streamClose
 }
 
+func (s *Session) ClosePorted() () {
+	s.shutdown.mu.Lock()
+		close(s.shutdown.portedClosed)
+	s.shutdown.mu.Unlock()
+}
+
+
 func (s *Session) Stop() {
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
@@ -323,7 +330,7 @@ func (s *Session) Stop() {
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {
 		close(s.resendChannel)
-		close(s.shutdown.portedClosed)
+		// close(s.shutdown.portedClosed)
 		s.shutdown.closed = true
 	}
 	s.shutdown.mu.Unlock()
@@ -336,4 +343,5 @@ func (s *Session) Stop() {
 	if s.responseWriter != nil {
 		s.responseWriter.Close()
 	}
+	<-s.shutdown.portedClosed
 }

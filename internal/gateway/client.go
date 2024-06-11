@@ -84,7 +84,7 @@ func (c *ClientBase) Start() {
 	}() 
 
 	c.session.SendStream(messages)
-	c.Stop()
+	c.Stop() // maybe we don't need this, we can just use
 
 	c.wg.Wait()
 	// for wait random time and check len c.session.ResendChannel then close it
@@ -103,4 +103,5 @@ func(c *ClientBase) runPorted(){
 
 func (c *ClientBase) Stop() {
 	c.session.Stop()
+	c.worker.Stop()
 }

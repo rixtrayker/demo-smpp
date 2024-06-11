@@ -21,11 +21,9 @@ type Worker struct {
     errors         chan error
     rateLimitCount *atomic.Int64
     wg             sync.WaitGroup
-    shutdown       chan struct{}
 }
 
 type Option func(*Worker)
-
 
 func WithQueues(queues ...string) Option {
     return func(w *Worker) {
@@ -39,24 +37,24 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
 
     client := redis.NewClient(&redis.Options{
         Addr:     cfg.RedisURL,
-        Password: "",
+        Password: "", // Ensure password is handled securely
         DB:       0,
+        ReadTimeout:  5 * time.Second, // or -1 for no timeout
+        WriteTimeout: 10 * time.Second,
     })
 
-    if client == nil {
-        return nil, errors.New("failed to connect to redis")
+    _, err := client.Ping(ctx).Result()
+    if err != nil {
+        logrus.WithError(err).Fatal("Failed to connect to Redis")
+        return nil, err
     }
-
-    // ctx, cancel := context.WithCancel(context.Background())
 
     worker := &Worker{
         ctx:            ctx,
-        // cancel:         cancel,
         redis:          client,
         decoder:        decoder,
         errors:         make(chan error, 100),
         rateLimitCount: atomic.NewInt64(0),
-        shutdown:       make(chan struct{}),
     }
 
     for _, opt := range options {
@@ -65,15 +63,19 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
 
     return worker, nil
 }
+
 func (w *Worker) Consume() (QueueMessage, error) {
-	result, err := w.redis.BLPop(w.ctx, 1 * time.Second, w.queues...).Result()
-
-	if err != nil {
+    result, err := w.redis.BLPop(w.ctx, 1*time.Second, w.queues...).Result()
+    
+    if err != nil {
+        if err == redis.Nil {
+            return QueueMessage{}, nil
+        }
         logrus.WithError(err).Error("Failed to consume message from queue")
-		return QueueMessage{}, err
-	}
+        return QueueMessage{}, err
+    }
 
-	return w.decoder.DecodeJSON([]byte(result[1]))
+    return w.decoder.DecodeJSON([]byte(result[1]))
 }
 
 func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
@@ -90,9 +92,6 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
             select {
             case <-w.ctx.Done(): // Explicitly handle context done
                 logrus.Info("Stream queue message shutdown initiated")
-                return
-            case <-w.shutdown: // Assuming there's a shutdown channel to listen to
-                logrus.Info("Shutting down streamQueueMessage due to shutdown signal")
                 return
             default:
                 result, err := w.Consume()
@@ -141,7 +140,6 @@ func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) e
 }
 
 func (w *Worker) Stop() {
-    close(w.shutdown)
     logrus.Info("Worker shutdown initiated")
     w.wg.Wait()
     logrus.Info("w.wg wait done")
@@ -151,6 +149,7 @@ func (w *Worker) Stop() {
 func (w *Worker) Close() error {
     err := w.redis.Close()
     if err != nil {
+        logrus.WithError(err).Error("Failed to close Redis client")
         return err
     }
     close(w.errors)
