@@ -1,29 +1,43 @@
 const redis = require('redis');
+
 const client = redis.createClient();
 const gateways = ['zain', 'stc', 'mobily']
 
 // Connect to Redis
 client.on('error', (err) => console.log('Redis Client Error', err));
 client.connect();
+
+// QueueMessage struct
+class QueueMessage {
+  constructor(messageID, provider, sender, phoneNumbers, text) {
+    this.message_id = messageID;
+    this.provider = provider;
+    this.sender = sender;
+    this.phone_numbers = phoneNumbers;
+    this.text = text;
+  }
+}
+
 // Function to generate a random list of phone numbers
 function generatePhoneNumbers(maxLength = 10) {
   const numNumbers = Math.floor(Math.random() * maxLength) + 1;
   const numbers = [];
   for (let i = 0; i < numNumbers; i++) {
-    numbers.push(966 * 1e9 + Math.floor(Math.random() * 1e9));
+    num = 966 * 1e9 + Math.floor(Math.random() * 1e9);
+    numbers.push(num);
   }
   return numbers;
 }
 
 // Function to create a QueueMessage object
 function createQueueMessage(gateway) {
-  return {
-    message_id: Math.random().toString(36).substring(2, 15), // Generate random message ID
-    provider: gateway,
-    sender: 'Your Sender Name', // Replace with your sender name
-    phone_numbers: generatePhoneNumbers(), // Map numbers to 1 for consistency
-    text: `This is a sample text message from ${gateway}.`,
-  };
+  return new QueueMessage(
+    Math.random().toString(36).substring(2, 15), // Generate random message ID
+    gateway,
+    'Your Sender Name', // Replace with your sender name
+    generatePhoneNumbers(), // Map numbers to 1 for consistency
+    `This is a sample text message from ${gateway}.`
+  );
 }
 
 // Function to write messages to the Redis queue
@@ -32,7 +46,7 @@ async function writeToQueue(messageCount) {
   const providerCounts = {};
 
   for (let i = 0; i < messageCount; i++) {
-    const gateway = gateways[Math.floor(Math.random() * 3)];
+    const gateway = gateways[Math.floor(Math.random() * gateways.length)];
     gatewayQueue = `go-${gateway}`;
     const message = JSON.stringify(createQueueMessage(gateway));
     await client.rPush(gatewayQueue, message);
