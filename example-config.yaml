@@ -13,6 +13,8 @@ database_config:
   user: "root"
   password: "root"
   dbname: "wifilter"
+  max_conn: 50
+  max_idle: 25
 
 providers:
   - PROVIDER_A:

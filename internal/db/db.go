@@ -44,8 +44,8 @@ func connect() error {
 			err = fmt.Errorf("failed to get underlying sql.DB: %w", err)
 			return
 		}
-		sqlDB.SetMaxIdleConns(20)
-		sqlDB.SetMaxOpenConns(70)
+		sqlDB.SetMaxOpenConns(cfg.MaxConn)
+		sqlDB.SetMaxIdleConns(cfg.MaxIdle)
 		fmt.Println("Successfully connected to database")
 	})
 	

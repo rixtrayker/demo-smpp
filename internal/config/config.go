@@ -31,6 +31,9 @@ type DatabaseConfig struct {
 	User     string `koanf:"user"`
 	Password string `koanf:"password"`
 	DBName   string `koanf:"dbname"`
+	SSLMode  string `koanf:"sslmode"`
+	MaxConn  int    `koanf:"max_conn"`
+	MaxIdle  int    `koanf:"max_idle"`
 }
 
 type Provider struct {
