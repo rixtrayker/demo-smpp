@@ -27,21 +27,18 @@ function createQueueMessage(gateway) {
 }
 
 // Function to write messages to the Redis queue
-async function writeToQueue(queueName, messageCount) {
-  const queueKey = `queue:${queueName}`;
+async function writeToQueue(messageCount) {
   let totalSent = 0;
   const providerCounts = {};
 
   for (let i = 0; i < messageCount; i++) {
     const gateway = gateways[Math.floor(Math.random() * 3)];
-    gatewayQueue = `queue:${queueName}:${gateway}`;
+    gatewayQueue = `go-${gateway}`;
     const message = JSON.stringify(createQueueMessage(gateway));
     await client.rPush(gatewayQueue, message);
     totalSent++;
     providerCounts[gateway] = (providerCounts[gateway] || 0) + 1;
   }
-
-  console.log(`Sent ${totalSent} messages to ${queueName}.`);
 
   // Log total numbers and provider breakdown
   console.log(`Total Numbers Sent: ${Object.values(providerCounts).reduce((a, b) => a + b, 0)}`);
@@ -54,10 +51,7 @@ async function writeToQueue(queueName, messageCount) {
 
 // Main function
 async function main() {
-  const queueName = 'go-testing';
   const messageCount = process.argv[2] ? parseInt(process.argv[2]) : null; // Message count (null for indefinite)
-
-  console.log(`Writing messages to Redis queue '${queueName}'...`);
 
   if (messageCount) {
     console.log(`Sending ${messageCount} messages.`);
@@ -65,7 +59,7 @@ async function main() {
     console.log('Sending messages indefinitely. Press Ctrl+C to stop.');
   }
 
-  await writeToQueue(queueName, messageCount || Infinity); // Use Infinity for indefinite
+  await writeToQueue(messageCount || Infinity); // Use Infinity for indefinite
 }
 
 main();
