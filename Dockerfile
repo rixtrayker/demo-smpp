@@ -18,6 +18,6 @@ COPY --from=builder /app/config.yaml .
 
 RUN apk add --no-cache git
 
-# EXPOSE 8080
+EXPOSE 2112
 
 CMD ["./app"]
