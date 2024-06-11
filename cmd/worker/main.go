@@ -4,12 +4,14 @@ import (
 	"context"
 	"os"
 	"os/signal"
+
 	"sync"
 	"syscall"
 
 	"github.com/joho/godotenv"
 	"github.com/rixtrayker/demo-smpp/internal/app"
 	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/sirupsen/logrus"
 )
 
@@ -48,6 +50,7 @@ func main() {
 	// 	}
 	// }()
 
+    metrics.StartPrometheusServer()
 
 	app.Start(ctx, cfg)
 

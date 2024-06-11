@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/linxGnu/gosmpp/data"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
+	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/sirupsen/logrus"
 )
@@ -96,18 +98,43 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 	messageStatus := s.messagesStatus[ref]
 	s.mu.Unlock()
 	
+	if messageStatus == nil {
+		s.responseWriter.WriteResponse(&dtos.ReceiveLog{
+			SystemMessageID: 0,
+			MessageID:       pd.MessageID,
+			Gateway:         s.gateway,
+			MobileNo:        "",
+			MessageState:    "Failed",
+			ErrorCode:       pd.CommandStatus.String(),
+			Data:            "SubmitSMResp: Message not found",
+		})
+		return
+	}
+
+	st := messageStatus.startTime
+	metrics.SubmitSMRespDuration.Observe(time.Since(st).Seconds())
+
 	errCode := pd.CommandStatus.String()
 	status := ""
 
+	isNew := len(messageStatus.GatewayHistory) == 1
+	new_or_ported := "new"
+	if !isNew {
+		new_or_ported = "ported"
+	}
+	
 	if pd.IsOk() {
 		status = "Sent"
+		metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 	} else {
 		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" {
 			s.wg.Add(1)
 			go s.portMessage(messageStatus)
 			status = "Ported"
+			metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 		} else {
 			status = "Failed"
+			metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 		}
 	}
 
@@ -136,6 +163,7 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 	defer s.wg.Done()
 	gateway, err := s.portGateway(messageStatus.GatewayHistory)
 	if err != nil {
+		metrics.PortedMessages.WithLabelValues("Failed", s.gateway, gateway).Inc()
 		s.Write(&dtos.ReceiveLog{
 			MessageID:  	 messageStatus.MessageID,
 			SystemMessageID: messageStatus.SystemMessageID,
@@ -149,6 +177,8 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 		logrus.Error(err)
 		return
 	}
+
+	metrics.PortedMessages.WithLabelValues("Ported", s.gateway, gateway).Inc()
 
 	s.resendChannel <- queue.MessageData{
 		Id:             messageStatus.SystemMessageID,
@@ -184,6 +214,7 @@ func (s *Session) portGateway(history []string) (string, error) {
 		}
 		return "stc", nil
 	case 3:
+		metrics.TotallyFailedPortedMessages.WithLabelValues(history[0], history[1], history[2]).Inc()
 		return "", errors.New("unable to port message, tried all gateways, len: 3")
 	}
 	return "", errors.New("invalid gateway history length: " + strconv.Itoa(len(history)))
