@@ -69,12 +69,7 @@ func handleShutdown(ctx context.Context) {
     <-ctx.Done()
     log.Println("Context canceled, initiating shutdown...")
     for _, c := range appClients {
-        wg.Add(1)
-        go func(c *clients.ClientBase){
-            defer wg.Done()
-            c.Stop()
-        }(c)
+        c.Stop()
     }
-    wg.Wait() // Ensure we wait for all sessions to stop
     log.Println("All sessions stopped.")
 }

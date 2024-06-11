@@ -60,12 +60,12 @@ func (c * ClientBase) SetHandler(handler *handlers.Handler) {
 func (c *ClientBase) Start() {
 	// c.state.Start()
 	// handlerFunc := c.handler.Handle
-	err := c.session.Start()
+	err := c.session.Start(c.ctx)
 	if err != nil {
 		return
 	}
 
-	w, err := queue.NewWorker(c.queues)
+	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.queues...))
 	c.worker = w
 	if err != nil {
 		return
@@ -75,11 +75,17 @@ func (c *ClientBase) Start() {
 		defer c.wg.Done()
 		c.runPorted()
 	}()
-    messages, _ := w.Stream()
 
-	defer c.Stop()
+    messages, errChan := w.Stream()
+	go func() {
+		for {
+			<-errChan
+		}
+	}() 
 
 	c.session.SendStream(messages)
+	c.Stop()
+
 	c.wg.Wait()
 	// for wait random time and check len c.session.ResendChannel then close it
 }

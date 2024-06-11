@@ -50,12 +50,14 @@ type Session struct {
 	rebindingInterval time.Duration
 	portGateways      []string
 	smppSessions      SMPPSessions
-	shutdown          CloseSignals
+    shutdown          CloseSignals
 }
 
 type CloseSignals struct {
-	streamClose chan struct{}
-	portedClosed chan struct{}
+    streamClose   chan struct{}
+    portedClosed  chan struct{}
+    closed        bool
+	mu            sync.Mutex
 }
 
 type MessageStatus struct {
@@ -125,10 +127,12 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		enquireLink:       5 * time.Second,
 		readTimeout:       10 * time.Second,
 		rebindingInterval: 600 * time.Second,
-		resendChannel:     make(chan queue.MessageData),
+		resendChannel:     make(chan queue.MessageData, 1000),
 		shutdown: CloseSignals{
 			streamClose: make(chan struct{}),
 			portedClosed: make(chan struct{}),
+			closed: false,
+			mu: sync.Mutex{},
 		},
 		portGateways:      []string{"zain", "mobily", "stc"},
 		smppSessions:      SMPPSessions{},
@@ -301,7 +305,6 @@ func (s *Session) ShutdownSignals() {
 }
 
 func (s *Session) Stop() {
-	close(s.stop)
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
 
@@ -316,8 +319,15 @@ func (s *Session) Stop() {
 	}
 
 	s.ShutdownSignals()
-	close(s.resendChannel)
-	
+
+    s.shutdown.mu.Lock()
+	if !s.shutdown.closed {
+		close(s.resendChannel)
+		close(s.shutdown.portedClosed)
+		s.shutdown.closed = true
+	}
+	s.shutdown.mu.Unlock()
+
 	logrus.Info("s.deliveryWg wait done")
 	s.deliveryWg.Wait()
 

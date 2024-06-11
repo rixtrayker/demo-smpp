@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
@@ -37,7 +38,7 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
     cfg := config.LoadConfig()
 
     client := redis.NewClient(&redis.Options{
-        Addr:    cfg.RedisURL,
+        Addr:     cfg.RedisURL,
         Password: "",
         DB:       0,
     })
@@ -65,8 +66,10 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
     return worker, nil
 }
 func (w *Worker) Consume() (QueueMessage, error) {
-	result, err := w.redis.BLPop(w.ctx, 0, w.queues...).Result()
+	result, err := w.redis.BLPop(w.ctx, 1 * time.Second, w.queues...).Result()
+
 	if err != nil {
+        logrus.WithError(err).Error("Failed to consume message from queue")
 		return QueueMessage{}, err
 	}
 
