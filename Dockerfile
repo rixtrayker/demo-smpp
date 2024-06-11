@@ -8,14 +8,13 @@ RUN go mod download
 
 COPY . .
 
-RUN go build cmd/worker/main.go -o app
+RUN GOOS=linux GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -o app cmd/worker/main.go
 
 FROM alpine:latest
-
 WORKDIR /app
 
 COPY --from=builder /app/app .
-COPY --from=builder /app/.env .
+COPY --from=builder /app/config.yaml .
 
 RUN apk add --no-cache git
 
