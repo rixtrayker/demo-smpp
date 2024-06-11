@@ -42,8 +42,7 @@ func (s *Session) Send(msg queue.MessageData) {
 
 func (s *Session) send(submitSM *pdu.SubmitSM) error {
 	s.wg.Add(1)
-	defer s.wg.Done()
-
+	s.allowSend()
 	if s.smppSessions.transceiver != nil {
 		return s.smppSessions.transceiver.Transceiver().Submit(submitSM)
 	}
@@ -62,7 +61,6 @@ func (s *Session) allowSend() bool {
 	return false
 }
 
-// SendStream function takes a channel of MessageData and sends the messages using a limited number of goroutines
 func (s *Session) SendStream(messages <-chan queue.MessageData) {
 	sem := make(chan struct{}, 100) // semaphore with a capacity of 100
 
@@ -128,7 +126,6 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 	} else {
 		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" {
-			s.wg.Add(1)
 			go s.portMessage(messageStatus)
 			status = "Ported"
 			metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
@@ -154,13 +151,7 @@ func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
 	return s.resendChannel, errors
 }
 
-func (s *Session) ClosePorted() {
-	close(s.resendChannel)
-	close(s.shutdown.portedClosed)
-}
-
 func (s *Session) portMessage(messageStatus *MessageStatus) {
-	defer s.wg.Done()
 	gateway, err := s.portGateway(messageStatus.GatewayHistory)
 	if err != nil {
 		metrics.PortedMessages.WithLabelValues("Failed", s.gateway, gateway).Inc()

@@ -130,7 +130,6 @@ func (s *Session) deliverPort(pd *pdu.DeliverSM) error {
 		GatewayHistory:  history,
 	}
 
-	s.wg.Add(1)
 	s.portMessage(msg)
 	return nil
 }

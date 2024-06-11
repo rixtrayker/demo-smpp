@@ -89,8 +89,12 @@ func (w *Writer) writeDB(msg *dtos.ReceiveLog){
 }
 
 func (w* Writer) Close(){
+	logrus.Info("closing response writer")
 	w.wg.Wait()
+
+	logrus.Info("closing logger")
 	Close() // logger close
+	logrus.Info("closing db")
 	db.Close()
 }
 

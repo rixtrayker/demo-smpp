@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -28,8 +29,8 @@ type Session struct {
 	gateway           string
 	sessionType       SessionType
 	startTime         time.Time
-	limiter       	  *rate.Limiter
-	rateLimit 		  int
+	limiter           *rate.Limiter
+	rateLimit         int
 	maxOutstanding    int
 	hasOutstanding    bool
 	outstandingCh     chan struct{}
@@ -49,7 +50,7 @@ type Session struct {
 	rebindingInterval time.Duration
 	portGateways      []string
 	smppSessions      SMPPSessions
-	shutdown 		  CloseSignals
+	shutdown          CloseSignals
 }
 
 type CloseSignals struct {
@@ -110,7 +111,7 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		startTime:         time.Now(),
 		concatenated:      make(map[uint8][]string),
 		handler:           h,
-		limiter:       rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.BurstLimit),
+		limiter:           rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.BurstLimit),
 		rateLimit:         cfg.RateLimit,
 		maxOutstanding:    cfg.MaxOutStanding,
 		hasOutstanding:    cfg.HasOutStanding,
@@ -119,12 +120,16 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		stop:              make(chan struct{}),
 		messagesStatus:    make(map[int32]*MessageStatus),
 		wg:                sync.WaitGroup{},
-		deliveryWg:		   sync.WaitGroup{},
+		deliveryWg:        sync.WaitGroup{},
 		sessionType:       SessionType(cfg.SessionType),
 		enquireLink:       5 * time.Second,
 		readTimeout:       10 * time.Second,
 		rebindingInterval: 600 * time.Second,
 		resendChannel:     make(chan queue.MessageData),
+		shutdown: CloseSignals{
+			streamClose: make(chan struct{}),
+			portedClosed: make(chan struct{}),
+		},
 		portGateways:      []string{"zain", "mobily", "stc"},
 		smppSessions:      SMPPSessions{},
 	}
@@ -147,15 +152,15 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 	return session, nil
 }
 
-func (s *Session) Start() error {
+func (s *Session) Start(ctx context.Context) error {
 	initialDelay := 100 * time.Millisecond
 	maxDelay := 10 * time.Second
 	factor := 2.0
 
 	for retries := 0; retries <= s.maxRetries; retries++ {
 		select {
-		case <-s.stop:
-			return errors.New("session stopped")
+		case <-ctx.Done():
+			return errors.New("session creation stopped")
 		default:
 			if err := s.connectSessions(); err != nil {
 				delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
@@ -296,7 +301,10 @@ func (s *Session) ShutdownSignals() {
 }
 
 func (s *Session) Stop() {
-	s.ShutdownSignals()
+	close(s.stop)
+	s.wg.Wait()
+	logrus.Info("s.wg wait done")
+
 	if s.smppSessions.transceiver != nil {
 		s.smppSessions.transceiver.Close()
 	}
@@ -306,16 +314,16 @@ func (s *Session) Stop() {
 	if s.smppSessions.transmitter != nil {
 		s.smppSessions.transmitter.Close()
 	}
+
+	s.ShutdownSignals()
+	close(s.resendChannel)
+	
+	logrus.Info("s.deliveryWg wait done")
+	s.deliveryWg.Wait()
+
 	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
 
-	close(s.outstandingCh)
-	close(s.stop) // who is lestinging to this channel?
-	
-    s.wg.Wait()
-
-	<-s.shutdown.portedClosed
-	s.deliveryWg.Wait()
 	if s.responseWriter != nil {
-		(*s.responseWriter).Close()
+		s.responseWriter.Close()
 	}
 }

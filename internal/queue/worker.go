@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/rixtrayker/demo-smpp/internal/config"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/atomic"
 )
 
@@ -21,11 +23,21 @@ type Worker struct {
     shutdown       chan struct{}
 }
 
-func NewWorker(queues []string) (*Worker, error) {
+type Option func(*Worker)
+
+
+func WithQueues(queues ...string) Option {
+    return func(w *Worker) {
+        w.queues = queues
+    }
+}
+
+func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
     decoder := NewDecoder()
+    cfg := config.LoadConfig()
 
     client := redis.NewClient(&redis.Options{
-        Addr:     "localhost:6379",
+        Addr:    cfg.RedisURL,
         Password: "",
         DB:       0,
     })
@@ -34,17 +46,20 @@ func NewWorker(queues []string) (*Worker, error) {
         return nil, errors.New("failed to connect to redis")
     }
 
-    ctx, cancel := context.WithCancel(context.Background())
+    // ctx, cancel := context.WithCancel(context.Background())
 
     worker := &Worker{
         ctx:            ctx,
-        cancel:         cancel,
+        // cancel:         cancel,
         redis:          client,
         decoder:        decoder,
-        queues:         queues,
         errors:         make(chan error, 100),
         rateLimitCount: atomic.NewInt64(0),
         shutdown:       make(chan struct{}),
+    }
+
+    for _, opt := range options {
+        opt(worker)
     }
 
     return worker, nil
@@ -70,9 +85,11 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
         for {
             select {
-            case <-w.ctx.Done():
+            case <-w.ctx.Done(): // Explicitly handle context done
+                logrus.Info("Stream queue message shutdown initiated")
                 return
-            case <-w.shutdown:
+            case <-w.shutdown: // Assuming there's a shutdown channel to listen to
+                logrus.Info("Shutting down streamQueueMessage due to shutdown signal")
                 return
             default:
                 result, err := w.Consume()
@@ -80,21 +97,19 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
                     errors <- err
                     continue
                 }
-
                 messages <- result
             }
         }
     }()
-    
+
     return messages, errors
 }
+
 
 func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     messages, errors := w.streamQueueMessage()
     data := make(chan MessageData)
-    w.wg.Add(1)
     go func() {
-        defer w.wg.Done()
         defer close(data)
         for msgQ := range messages {
             for _, msg := range msgQ.Deflate() {
@@ -124,7 +139,9 @@ func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) e
 
 func (w *Worker) Stop() {
     close(w.shutdown)
+    logrus.Info("Worker shutdown initiated")
     w.wg.Wait()
+    logrus.Info("w.wg wait done")
     w.Close()
 }
 
