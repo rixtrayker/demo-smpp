@@ -9,6 +9,7 @@ import (
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
+	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/sirupsen/logrus"
@@ -26,7 +27,8 @@ const (
 type Session struct {
 	gateway           string
 	sessionType       SessionType
-	limiter       *rate.Limiter
+	startTime         time.Time
+	limiter       	  *rate.Limiter
 	rateLimit 		  int
 	maxOutstanding    int
 	hasOutstanding    bool
@@ -56,6 +58,7 @@ type CloseSignals struct {
 }
 
 type MessageStatus struct {
+	startTime       time.Time
 	MessageID       string
 	SystemMessageID int64
 	Sender          string
@@ -104,6 +107,7 @@ func WithResponseWriter(responseWriter *response.Writer) Option {
 func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session, error) {
 	session := &Session{
 		gateway:           cfg.Name,
+		startTime:         time.Now(),
 		concatenated:      make(map[uint8][]string),
 		handler:           h,
 		limiter:       rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.BurstLimit),
@@ -198,6 +202,7 @@ func (s *Session) connectSessions() error {
 		}
 	}
 
+	metrics.ActiveSessions.Inc()
 	return nil
 }
 
@@ -222,10 +227,12 @@ func (s *Session) handleReceivingError(err error) {
 }
 
 func (s *Session) handleRebindingError(err error) {
+	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
 	logrus.WithError(err).Error("Rebinding error")
 }
 
 func (s *Session) handleClosed(state gosmpp.State) {
+	metrics.ActiveSessions.Dec()
 	logrus.Info("Session closed: ", state)
 }
 
@@ -233,11 +240,14 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 	return func(p pdu.PDU) (pdu.PDU, bool) {
 		switch pd := p.(type) {
 		case *pdu.BindResp:
+
 			// Handle BindResp if needed
 		case *pdu.Unbind:
 			logrus.Info("Unbind Received")
+			metrics.ActiveSessions.Dec()
 			return pd.GetResponse(), true
 		case *pdu.UnbindResp:
+			metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
 			// Handle UnbindResp if needed
 		case *pdu.SubmitSMResp:
 			s.handleSubmitSMResp(pd)
@@ -296,6 +306,8 @@ func (s *Session) Stop() {
 	if s.smppSessions.transmitter != nil {
 		s.smppSessions.transmitter.Close()
 	}
+	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
+
 	close(s.outstandingCh)
 	close(s.stop) // who is lestinging to this channel?
 	

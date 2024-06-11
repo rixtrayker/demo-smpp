@@ -7,6 +7,7 @@ import (
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/db"
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
+	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/models"
 	"github.com/sirupsen/logrus"
 )
@@ -106,16 +107,16 @@ func (s *Session) deliverPort(pd *pdu.DeliverSM) error {
 		return errors.New("You tried 3 gateways on msgID:" + msgID)
 	}
 
-
 	// history := []string{}
 
 	// for _, dlr := range dlrSms {
 	// 	history = append(history, dlr.Gateway)
 	// }
 
-	history := []string{"STC"}
+	history := []string{"stc"}
 
 	if result.Error != nil {
+		metrics.PortedMessages.WithLabelValues("db-error", "stc", "zain").Inc()
 		logrus.WithError(result.Error).Info("Error getting DlrSms")
 		return result.Error
 	}
