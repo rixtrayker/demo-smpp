@@ -312,6 +312,7 @@ func (s *Session) ClosePorted() () {
 
 
 func (s *Session) Stop() {
+	s.ShutdownSignals()
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
 
@@ -325,12 +326,11 @@ func (s *Session) Stop() {
 		s.smppSessions.transmitter.Close()
 	}
 
-	s.ShutdownSignals()
 
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {
 		close(s.resendChannel)
-		// close(s.shutdown.portedClosed)
+		close(s.shutdown.portedClosed)
 		s.shutdown.closed = true
 	}
 	s.shutdown.mu.Unlock()

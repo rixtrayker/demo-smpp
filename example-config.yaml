@@ -32,6 +32,7 @@ providers:
     max_retries: 3
     queues:
       - "queue_a"
+    ported_queue: "queue_a_ported"
 
   - PROVIDER_B:
     name: "PROVIDER_B"
@@ -50,3 +51,4 @@ providers:
     max_retries: 2
     queues:
       - "queue_b"
+    ported_queue: "queue_b_ported"

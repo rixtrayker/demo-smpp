@@ -64,7 +64,7 @@ func (w *Writer) writeLog(msg *dtos.ReceiveLog){
 		"Data":         	msg.Data,
 	}
 
-	w.logger.WithFields(loggingFields).Info(" new dlr ")
+	w.logger.WithFields(loggingFields).Info("")
 }
 
 func (w *Writer) writeDB(msg *dtos.ReceiveLog){

@@ -51,6 +51,7 @@ type Provider struct {
 	HasOutStanding bool     `koanf:"has_outstanding"`
 	MaxRetries     int      `koanf:"max_retries"`
 	Queues         []string `koanf:"queues"`
+	PortedQueue	   string   `koanf:"ported_queue"`
 }
 
 var config *Config
@@ -106,6 +107,9 @@ func setDefaults(cfg *Config) {
 		if p.Queues == nil {
 			p.Queues = []string{"default"}
 		}
+		if p.PortedQueue == "" {
+			p.PortedQueue = p.Queues[0] + "-ported"
+		}
 	}
 
 	if cfg.DatabaseConfig.Port == 0 {
@@ -127,5 +131,6 @@ func logProviderConfig(provider Provider) {
 		"HasOutStanding": provider.HasOutStanding,
 		"MaxRetries":     provider.MaxRetries,
 		"Queues":         provider.Queues,
+		"PortedQueue":    provider.PortedQueue,
 	}).Info("Provider")
 }

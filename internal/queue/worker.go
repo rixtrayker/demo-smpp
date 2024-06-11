@@ -18,6 +18,7 @@ type Worker struct {
     redis          *redis.Client
     decoder        *Decoder
     queues         []string
+    portedQueue    string
     errors         chan error
     rateLimitCount *atomic.Int64
     wg             sync.WaitGroup
@@ -28,6 +29,12 @@ type Option func(*Worker)
 func WithQueues(queues ...string) Option {
     return func(w *Worker) {
         w.queues = queues
+    }
+}
+
+func WithPortedQueue(queue string) Option {
+    return func(w *Worker) {
+        w.portedQueue = queue
     }
 }
 
@@ -84,14 +91,14 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
     w.wg.Add(1)
     go func() {
-        defer w.wg.Done()
         defer close(messages)
         defer close(errChan)
+        defer w.wg.Done()
 
         for {
             select {
             case <-w.ctx.Done(): // Explicitly handle context done
-                logrus.Info("Stream queue message shutdown initiated")
+                logrus.Info("Stream queue shutting down...")
                 return
             default:
                 result, err := w.Consume()
@@ -111,7 +118,9 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     messages, errChan := w.streamQueueMessage()
     data := make(chan MessageData, 10000)
+    w.wg.Add(1)
     go func() {
+        defer w.wg.Done()
         defer close(data)
         for msgQ := range messages {
             for _, msg := range msgQ.Deflate() {
@@ -122,7 +131,7 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     return data, errChan
 }
 
-func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) error {
+func (w *Worker) Push(ctx context.Context, message *MessageData) error {
     w.wg.Add(1)
     defer w.wg.Done()
 
@@ -130,7 +139,7 @@ func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) e
     case <-w.ctx.Done():
         return errors.New("worker is shutting down, can't push message")
     default:
-        _, err := w.redis.RPush(ctx, queue, message).Result()
+        _, err := w.redis.RPush(ctx, w.portedQueue, message).Result()
         if err != nil {
             return err
         }
