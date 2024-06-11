@@ -21,7 +21,7 @@ func (DlrResponse) TableName() string {
 }
 
 func (DlrSms) TableName() string {
-	return "dlr_sms"
+	return "dlr_sms_go"
 }
 
 func (ErrorLog) TableName() string {

@@ -80,13 +80,13 @@ func (w *Worker) Consume() (QueueMessage, error) {
 
 func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
     messages := make(chan QueueMessage, 200)
-    errors := make(chan error)
+    errChan := make(chan error,200)
 
     w.wg.Add(1)
     go func() {
         defer w.wg.Done()
         defer close(messages)
-        defer close(errors)
+        defer close(errChan)
 
         for {
             select {
@@ -96,7 +96,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
             default:
                 result, err := w.Consume()
                 if err != nil {
-                    errors <- err
+                    errChan <- err
                     continue
                 }
                 messages <- result
@@ -104,13 +104,13 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
         }
     }()
 
-    return messages, errors
+    return messages, errChan
 }
 
 
 func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
-    messages, errors := w.streamQueueMessage()
-    data := make(chan MessageData)
+    messages, errChan := w.streamQueueMessage()
+    data := make(chan MessageData, 10000)
     go func() {
         defer close(data)
         for msgQ := range messages {
@@ -119,8 +119,7 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
             }
         }
     }()
-
-    return data, errors
+    return data, errChan
 }
 
 func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) error {

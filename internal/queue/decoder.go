@@ -43,7 +43,7 @@ type QueueMessage struct {
 	MessageID    string          `json:"message_id"`
 	Provider     string          `json:"provider"`
 	Sender       string          `json:"sender"`
-	PhoneNumbers map[int64]int64 `json:"phone_numbers"`
+	PhoneNumbers []int64 	     `json:"phone_numbers"`
 	Text         string          `json:"text"`
 }
 
@@ -58,17 +58,15 @@ type MessageData struct {
 
 func (m *QueueMessage) Deflate() []MessageData {
 	var data []MessageData
-	for number, count := range m.PhoneNumbers {
-		for i := int64(0); i < count; i++ {
-			data = append(data, MessageData{
-				Id:             0,
-				Gateway:        m.Provider,
-				Sender:         m.Sender,
-				Number:         fmt.Sprintf("%d", number),
-				Text:           m.Text,
-				GatewayHistory: []string{},
-			})
-		}
+	for _, number := range m.PhoneNumbers {
+		data = append(data, MessageData{
+			Id:             0,
+			Gateway:        m.Provider,
+			Sender:         m.Sender,
+			Number:         fmt.Sprintf("%d", number),
+			Text:           m.Text,
+			GatewayHistory: []string{},
+		})
 	}
 	return data
 }
