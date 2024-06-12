@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 
@@ -86,8 +85,8 @@ func (w *Worker) Consume() (QueueMessage, error) {
 }
 
 func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
-    messages := make(chan QueueMessage, 200)
-    errChan := make(chan error,200)
+    messages := make(chan QueueMessage, 50)
+    errChan := make(chan error, 50)
 
     w.wg.Add(1)
     go func() {
@@ -97,7 +96,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
         for {
             select {
-            case <-w.ctx.Done(): // Explicitly handle context done
+            case <-w.ctx.Done():
                 logrus.Info("Stream queue shutting down...")
                 return
             default:
@@ -117,7 +116,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
 func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     messages, errChan := w.streamQueueMessage()
-    data := make(chan MessageData, 10000)
+    data := make(chan MessageData, 200)
     w.wg.Add(1)
     go func() {
         defer w.wg.Done()
@@ -131,20 +130,18 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     return data, errChan
 }
 
-func (w *Worker) Push(ctx context.Context, message *MessageData) error {
+func (w *Worker) PushPorted(ctx context.Context, message *MessageData) error {
+   return w.Push(ctx, w.portedQueue, message)
+}
+
+func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) error {
     w.wg.Add(1)
     defer w.wg.Done()
-
-    select {
-    case <-w.ctx.Done():
-        return errors.New("worker is shutting down, can't push message")
-    default:
-        _, err := w.redis.RPush(ctx, w.portedQueue, message).Result()
-        if err != nil {
-            return err
-        }
-        return nil
+    _, err := w.redis.RPush(ctx, queue, message).Result()
+    if err != nil {
+        return err
     }
+    return nil
 }
 
 func (w *Worker) Stop() {

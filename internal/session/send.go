@@ -13,10 +13,10 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/sirupsen/logrus"
 )
+func (s *Session) Send(msg queue.MessageData) error {
+	s.wg.Add(1)
 
-func (s *Session) Send(msg queue.MessageData) {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
-	logrus.Infof("Sending message to %s", msg.Number)
 	ref := submitSM.SequenceNumber
 
 	gh := append(msg.GatewayHistory, s.gateway)
@@ -34,14 +34,10 @@ func (s *Session) Send(msg queue.MessageData) {
 		s.outstandingCh <- struct{}{}
 	}
 
-	err := s.send(submitSM)
-	if err != nil {
-		logrus.WithError(err).Error("Error sending message")
-	}
+	return s.send(submitSM)
 }
 
 func (s *Session) send(submitSM *pdu.SubmitSM) error {
-	s.wg.Add(1)
 	s.allowSend()
 	if s.smppSessions.transceiver != nil {
 		return s.smppSessions.transceiver.Transceiver().Submit(submitSM)
@@ -61,15 +57,19 @@ func (s *Session) allowSend() bool {
 	return false
 }
 
-func (s *Session) SendStream(messages <-chan queue.MessageData) {
+func (s *Session) SendStream(messages <-chan queue.MessageData){
 	sem := make(chan struct{}, 100) // semaphore with a capacity of 100
-
+	// errChan := make(chan error)
 	for msg := range messages {
 		sem <- struct{}{} // acquire a slot
-
 		go func(m queue.MessageData) {
 			defer func() { <-sem }() // release the slot
-			s.Send(m)
+			err := s.Send(msg)
+			if err != nil {
+				// go func(err error) {
+				// 		errChan <- err
+				// }(err)
+			}
 		}(msg)
 	}
 
@@ -78,6 +78,7 @@ func (s *Session) SendStream(messages <-chan queue.MessageData) {
 		sem <- struct{}{}
 	}
 	close(s.shutdown.streamClose)
+	// return errChan
 }
 
 func (s *Session) handleSubmitSMResp(pd *pdu.SubmitSMResp) {

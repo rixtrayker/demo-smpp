@@ -48,7 +48,6 @@ func NewClientBase(ctx context.Context, cfg config.Provider, name string) (*Clie
 		cancelFunc: &cancel,
 		cfg: cfg,
 		session: sess,
-		queues: cfg.Queues,
 		// state: state,
 	}, nil
 }
@@ -65,7 +64,7 @@ func (c *ClientBase) Start() {
 		return
 	}
 
-	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.queues...))
+	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.cfg.Queues...), queue.WithPortedQueue(c.cfg.PortedQueue))
 	c.worker = w
 	if err != nil {
 		return
@@ -76,32 +75,40 @@ func (c *ClientBase) Start() {
 		c.runPorted()
 	}()
 
-    messages, errChan := w.Stream()
+	messages, errChan := w.Stream()
 	go func() {
-		for {
-			<-errChan
-		}
-	}() 
+        for err := range errChan {
+           logrus.WithError(err).Error("Failed to stream message in func Stream") 
+        }
+    }()
 
 	c.session.SendStream(messages)
-	c.Stop() // maybe we don't need this, we can just use
 
-	c.wg.Wait()
 	// for wait random time and check len c.session.ResendChannel then close it
 }
 
 func(c *ClientBase) runPorted(){
 	msg, _ := c.session.StreamPorted()
+	semaphore := make(chan struct{}, 50) // Create a semaphore with a capacity of 50
 	for msg := range msg {
-		err := c.worker.Push(c.ctx, "ported", &msg)
-		if err != nil {
-			logrus.WithError(err).Error("pushing failed failed sending message")
-		}
+		semaphore <- struct{}{} // Acquire a semaphore slot
+		go func(m queue.MessageData) {
+			defer func() { <-semaphore }() // Release the semaphore slot when done
+			err := c.worker.PushPorted(c.ctx, &m)
+			if err != nil {
+				logrus.WithError(err).Error("pushing failed failed sending message")
+			}
+		}(msg)
+	}
+	// Wait for all goroutines to finish
+	for i := 0; i < cap(semaphore); i++ {
+		semaphore <- struct{}{}
 	}
 	c.session.ClosePorted()
 }
 
 func (c *ClientBase) Stop() {
 	c.session.Stop()
+	// c.wg.Wait()
 	c.worker.Stop()
 }

@@ -330,7 +330,6 @@ func (s *Session) Stop() {
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {
 		close(s.resendChannel)
-		close(s.shutdown.portedClosed)
 		s.shutdown.closed = true
 	}
 	s.shutdown.mu.Unlock()
