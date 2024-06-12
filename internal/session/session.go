@@ -315,6 +315,7 @@ func (s *Session) Stop() {
 	s.ShutdownSignals()
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
+	time.Sleep(1 * time.Second)
 
 	if s.smppSessions.transceiver != nil {
 		s.smppSessions.transceiver.Close()
@@ -340,6 +341,7 @@ func (s *Session) Stop() {
 	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
 
 	if s.responseWriter != nil {
+		time.Sleep(1 * time.Second)
 		s.responseWriter.Close()
 	}
 	<-s.shutdown.portedClosed
