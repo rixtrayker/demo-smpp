@@ -70,12 +70,12 @@ func getMessageData(pd *pdu.DeliverSM) (string, string, string, error) {
 func (s *Session) prepareResult(pd *pdu.DeliverSM, status string) dtos.ReceiveLog {
 	msgID := getReceiptedMessageID(pd)
 	mobileNo := pd.SourceAddr.Address()
-	submitID, dlvrd, errCode, err := getMessageData(pd)
+	submitID, _, errCode, err := getMessageData(pd)
 	if err != nil {
 		logrus.WithError(err).Info("Got error when getting DeliverSM message")
 	}
 	if status == "" {
-		if dlvrd == "000" {
+		if errCode == "000" {
 			status = "Delivered"
 		} else {
 			status = "Undelivered"

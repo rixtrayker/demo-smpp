@@ -64,8 +64,11 @@ func (s *Session) SendStream(messages <-chan queue.MessageData){
 		sem <- struct{}{} // acquire a slot
 		go func(m queue.MessageData) {
 			defer func() { <-sem }() // release the slot
-			err := s.Send(msg)
+			err := s.Send(m)
 			if err != nil {
+				if err == gosmpp.ErrConnectionClosing {
+					logrus.Error("Connection closing")
+				}
 				// go func(err error) {
 				// 		errChan <- err
 				// }(err)
