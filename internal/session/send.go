@@ -39,13 +39,22 @@ func (s *Session) Send(msg queue.MessageData) error {
 
 func (s *Session) send(submitSM *pdu.SubmitSM) error {
 	s.allowSend()
+	var err error
+	
 	if s.smppSessions.transceiver != nil {
-		return s.smppSessions.transceiver.Transceiver().Submit(submitSM)
+		err = s.smppSessions.transceiver.Transceiver().Submit(submitSM)
+		
 	}
 	if s.smppSessions.transmitter != nil {
-		return s.smppSessions.transmitter.Transmitter().Submit(submitSM)
+		err = s.smppSessions.transmitter.Transmitter().Submit(submitSM)
 	}
-	return errors.New("no valid SMPP session found")
+
+	if err == nil{
+		s.wg.Add(1)	
+		return nil
+	}
+
+	return err
 }
 
 // allow send func
