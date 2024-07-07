@@ -69,7 +69,7 @@ func (c *ClientBase) Start() {
 	if err != nil {
 		return
 	}
-	c.wg.Add(1)
+	// c.wg.Add(1)
 	go func(){
 		defer c.wg.Done()
 		c.runPorted()
@@ -82,19 +82,32 @@ func (c *ClientBase) Start() {
         }
     }()
 
-	c.session.SendStream(messages)
+	// cancelled := make(chan struct{})
+	// c.session.SendStreamWithCancel(c.ctx, messages, cancelled)
+	c.wg.Add(len(messages))
+	c.session.SendStreamWithCancel(c.ctx, messages)
+	logrus.Infof("PushMessage len: %d", len(messages))
+	bgCtx := context.Background()
+	for msg := range messages {
+		w.PushMessage(bgCtx, "resend", msg)
+		// c.wg.Done()
+	}
+
+	// send close signal to unblock stopping and closing and inside Stop() it waits for running Queue calls
+	w.Finished()
 
 	// for wait random time and check len c.session.ResendChannel then close it
 }
 
 func(c *ClientBase) runPorted(){
 	msg, _ := c.session.StreamPorted()
+	// make sure it gets empty
 	semaphore := make(chan struct{}, 50) // Create a semaphore with a capacity of 50
 	for msg := range msg {
 		semaphore <- struct{}{} // Acquire a semaphore slot
 		go func(m queue.MessageData) {
 			defer func() { <-semaphore }() // Release the semaphore slot when done
-			err := c.worker.PushPorted(c.ctx, &m)
+			err := c.worker.PushPorted(c.ctx, m)
 			if err != nil {
 				logrus.WithError(err).Error("pushing failed failed sending message")
 			}
