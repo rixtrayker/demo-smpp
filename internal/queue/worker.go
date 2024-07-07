@@ -5,9 +5,12 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/sirupsen/logrus"
+
 	"go.uber.org/atomic"
 )
 
@@ -21,6 +24,7 @@ type Worker struct {
     errors         chan error
     rateLimitCount *atomic.Int64
     wg             sync.WaitGroup
+    closeCh        chan struct{}
 }
 
 type Option func(*Worker)
@@ -42,6 +46,7 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
     cfg := config.LoadConfig()
 
     client := redis.NewClient(&redis.Options{
+        PoolSize: 1000,
         Addr:     cfg.RedisURL,
         Password: "", // Ensure password is handled securely
         DB:       0,
@@ -61,6 +66,7 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
         decoder:        decoder,
         errors:         make(chan error, 100),
         rateLimitCount: atomic.NewInt64(0),
+        closeCh:       make(chan struct{}),
     }
 
     for _, opt := range options {
@@ -116,7 +122,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
 func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     messages, errChan := w.streamQueueMessage()
-    data := make(chan MessageData, 200)
+    data := make(chan MessageData, 100)
     w.wg.Add(1)
     go func() {
         defer w.wg.Done()
@@ -130,15 +136,25 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     return data, errChan
 }
 
-func (w *Worker) PushPorted(ctx context.Context, message *MessageData) error {
-   return w.Push(ctx, w.portedQueue, message)
+func (w *Worker) PushPorted(ctx context.Context, message MessageData) error {
+   return w.PushMessage(ctx, w.portedQueue, message)
 }
 
-func (w *Worker) Push(ctx context.Context, queue string, message *MessageData) error {
+func (w *Worker) PushMessage(ctx context.Context, queue string, message MessageData) error {
     w.wg.Add(1)
     defer w.wg.Done()
-    _, err := w.redis.RPush(ctx, queue, message).Result()
+    var err error
+    var strMsg []byte
+    // encode message to json
+    strMsg, err = json.Marshal(message)
     if err != nil {
+        logrus.WithError(err).Error("Failed to marshal message")
+        logrus.Errorf("Failed to marshal message: %v", message)
+        return err
+    }
+    _, err = w.redis.RPush(ctx, queue, string(strMsg)).Result()
+    if err != nil {
+        logrus.WithError(err).Error("Failed to push message to queue")
         return err
     }
     return nil
@@ -151,7 +167,13 @@ func (w *Worker) Stop() {
     w.Close()
 }
 
+func (w *Worker) Finished(){
+    close(w.closeCh)
+}
+
 func (w *Worker) Close() error {
+    <-w.closeCh
+    w.wg.Wait()
     err := w.redis.Close()
     if err != nil {
         logrus.WithError(err).Error("Failed to close Redis client")
