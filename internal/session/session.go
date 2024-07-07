@@ -291,14 +291,10 @@ func (h *Handler) HandlePDU(pd *interface{}) (pdu.PDU, bool) {
     return (*pd).(pdu.PDU).GetResponse(), true
 }
 
-func (s *Session) PushResendChannel(msg queue.MessageData) {
-	s.resendChannel <- msg
+func (s *Session) StreamResend() <-chan queue.MessageData {
+	return s.resendChannel
 }
 
-// func (s *Session) PopResendChannel() queue.MessageData {
-// 	msg := <-s.resendChannel
-// 	return msg
-// }
 
 func (s *Session) ShutdownSignals() {
 	<-s.shutdown.streamClose
@@ -315,7 +311,6 @@ func (s *Session) Stop() {
 	s.ShutdownSignals()
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
-	time.Sleep(1 * time.Second)
 
 	if s.smppSessions.transceiver != nil {
 		s.smppSessions.transceiver.Close()
@@ -327,6 +322,7 @@ func (s *Session) Stop() {
 		s.smppSessions.transmitter.Close()
 	}
 
+	time.Sleep(1 * time.Second)
 
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {
