@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/data"
 	"github.com/linxGnu/gosmpp/pdu"
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
@@ -13,9 +14,8 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/sirupsen/logrus"
 )
-func (s *Session) Send(msg queue.MessageData) error {
-	s.wg.Add(1)
 
+func (s *Session) Send(msg queue.MessageData) error {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
 	ref := submitSM.SequenceNumber
 
@@ -43,7 +43,6 @@ func (s *Session) send(submitSM *pdu.SubmitSM) error {
 	
 	if s.smppSessions.transceiver != nil {
 		err = s.smppSessions.transceiver.Transceiver().Submit(submitSM)
-		
 	}
 	if s.smppSessions.transmitter != nil {
 		err = s.smppSessions.transmitter.Transmitter().Submit(submitSM)
@@ -52,6 +51,8 @@ func (s *Session) send(submitSM *pdu.SubmitSM) error {
 	if err == nil{
 		s.wg.Add(1)	
 		return nil
+	} else {
+		s.retrySend(s.messagesStatus[submitSM.SequenceNumber], err.Error())
 	}
 
 	return err
@@ -91,6 +92,24 @@ func (s *Session) SendStream(messages <-chan queue.MessageData){
 	}
 	close(s.shutdown.streamClose)
 	// return errChan
+}
+
+func (s *Session) SendStreamWithCancel(ctx context.Context, messages <-chan queue.MessageData) {
+	for msg := range messages {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := s.Send(msg)
+			if err != nil {
+				if err == gosmpp.ErrConnectionClosing {
+					logrus.Error("Connection closing")
+				}
+			}
+		}
+	}
+
+	close(s.shutdown.streamClose)
 }
 
 func (s *Session) handleSubmitSMResp(pd *pdu.SubmitSMResp) {
@@ -138,13 +157,17 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		status = "Sent"
 		metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 	} else {
-		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" {
+		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" { // ensure logic
 			go s.portMessage(messageStatus)
 			status = "Ported"
-			metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
+			// metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 		} else {
-			status = "Failed"
-			metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
+			if pd.CommandStatus == data.ESME_RSUBMITFAIL || pd.CommandStatus == data.ESME_RTHROTTLED {
+				s.retrySend(messageStatus, pd.CommandStatus.String())
+			} else {
+				status = "Failed"
+				metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
+			}
 		}
 	}
 
@@ -162,6 +185,19 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
 	errors := make(chan error)
 	return s.resendChannel, errors
+}
+
+func (s *Session) retrySend(messageStatus *MessageStatus, status string) { 
+	metrics.ResendMessages.WithLabelValues(status, s.gateway).Inc()
+
+	s.resendChannel <- queue.MessageData{
+		Id:             messageStatus.SystemMessageID,
+		Gateway:        s.gateway,
+		Sender:         messageStatus.Sender,
+		Text:           messageStatus.Text,
+		Number:         messageStatus.Number,
+		GatewayHistory: messageStatus.GatewayHistory,
+	}
 }
 
 func (s *Session) portMessage(messageStatus *MessageStatus) {
