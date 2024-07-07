@@ -56,6 +56,14 @@ var (
         []string{"status", "gateway", "ported_or_new"},
     )
 
+    ResendMessages = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "app_resend_messages_total",
+            Help: "Total number of resend messages",
+        },
+        []string{"status", "gateway"},
+    )
+
     PortedMessages = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "app_ported_messages_total",
@@ -81,7 +89,7 @@ var (
 )
 
 func init() {
-    prometheus.MustRegister(Requests, RequestDuration, ErrorRate, ActiveSessions, SessionDuration, SentMessages, PortedMessages, TotallyFailedPortedMessages)
+    prometheus.MustRegister(Requests, RequestDuration, ErrorRate, ActiveSessions, SessionDuration, SentMessages, ResendMessages, PortedMessages, TotallyFailedPortedMessages, SubmitSMRespDuration)
 }
 
 func StartPrometheusServer() {
