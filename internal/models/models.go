@@ -32,6 +32,17 @@ func (FailedJob) TableName() string {
 	return "failed_jobs"
 }
 
+func (MessageDetailsResponse) TableName() string {
+	return "message_details_response"
+}
+
+type MessageDetailsResponse struct {
+	MessageID int64  `gorm:"column:message_id;not null"`
+	Number    int64  `gorm:"column:number;not null"`
+	Status    string `gorm:"column:status;not null"`
+	Company   string `gorm:"column:company"`
+}
+
 type DlrSms struct {
 	ID           	int64      `gorm:"primaryKey"`
 	MessageID    	string     `gorm:"size:255"`
