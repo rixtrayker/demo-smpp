@@ -10,3 +10,4 @@ config.yaml
 internal/.DS_Store
 */**/.DS_Store
 */.DS_Store
+.PID
