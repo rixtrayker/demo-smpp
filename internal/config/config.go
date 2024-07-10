@@ -51,18 +51,21 @@ type Provider struct {
 	HasOutStanding bool     `koanf:"has_outstanding"`
 	MaxRetries     int      `koanf:"max_retries"`
 	Queues         []string `koanf:"queues"`
-	PortedQueue	   string   `koanf:"ported_queue"`
 }
 
 var config *Config
 var k = koanf.New(".")
 
-func LoadConfig() *Config {
+func LoadConfig(filePath string) *Config {
 	if config != nil {
 		return config
 	}
 
-	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
+	if filePath == "" {
+		filePath = "config.yaml"
+	}
+
+	if err := k.Load(file.Provider(filePath), yaml.Parser()); err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
@@ -107,9 +110,6 @@ func setDefaults(cfg *Config) {
 		if p.Queues == nil {
 			p.Queues = []string{"default"}
 		}
-		if p.PortedQueue == "" {
-			p.PortedQueue = p.Queues[0] + "-ported"
-		}
 	}
 
 	if cfg.DatabaseConfig.Port == 0 {
@@ -131,6 +131,5 @@ func logProviderConfig(provider Provider) {
 		"HasOutStanding": provider.HasOutStanding,
 		"MaxRetries":     provider.MaxRetries,
 		"Queues":         provider.Queues,
-		"PortedQueue":    provider.PortedQueue,
 	}).Info("Provider")
 }

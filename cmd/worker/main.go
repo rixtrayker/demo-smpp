@@ -17,7 +17,15 @@ import (
 func main() {
 	go WritePID(".PID")
 
-	cfg := config.LoadConfig()
+	// custom cfg file path from flags main args
+	//args 
+
+	cfgFile := ""
+
+	if len(os.Args) > 1 {
+		cfgFile = os.Args[1]
+	}
+	cfg := config.LoadConfig(cfgFile)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
