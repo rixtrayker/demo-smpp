@@ -34,7 +34,8 @@ type Session struct {
 	maxOutstanding    int
 	hasOutstanding    bool
 	outstandingCh     chan struct{}
-	resendChannel     chan queue.MessageData
+	portedStream      *Stream
+	resendStream 	  *Stream
 	mu                sync.Mutex
 	handler           *PDUHandler
 	stop              chan struct{}
@@ -127,10 +128,12 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		enquireLink:       5 * time.Second,
 		readTimeout:       10 * time.Second,
 		rebindingInterval: 600 * time.Second,
-		resendChannel:     make(chan queue.MessageData, 1000),
+		portedStream: 		NewStream(50),
+		resendStream:       NewStream(50),
+
+		/// To be changed
 		shutdown: CloseSignals{
 			streamClose: make(chan struct{}),
-			portedClosed: make(chan struct{}),
 			closed: false,
 			mu: sync.Mutex{},
 		},
@@ -292,23 +295,12 @@ func (h *Handler) HandlePDU(pd *interface{}) (pdu.PDU, bool) {
 }
 
 func (s *Session) StreamResend() <-chan queue.MessageData {
-	return s.resendChannel
+	return s.resendStream.stream
 }
-
-
-func (s *Session) ShutdownSignals() {
-	<-s.shutdown.streamClose
-}
-
-func (s *Session) ClosePorted() () {
-	s.shutdown.mu.Lock()
-		close(s.shutdown.portedClosed)
-	s.shutdown.mu.Unlock()
-}
-
 
 func (s *Session) Stop() {
-	s.ShutdownSignals()
+	<-s.shutdown.streamClose
+	
 	s.wg.Wait()
 	logrus.Info("s.wg wait done")
 
@@ -324,9 +316,12 @@ func (s *Session) Stop() {
 
 	time.Sleep(1 * time.Second)
 
+	// close(s.portedChannel)
+	s.portedStream.Close()
+	
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {
-		close(s.resendChannel)
+		
 		s.shutdown.closed = true
 	}
 	s.shutdown.mu.Unlock()
@@ -340,5 +335,4 @@ func (s *Session) Stop() {
 		time.Sleep(1 * time.Second)
 		s.responseWriter.Close()
 	}
-	<-s.shutdown.portedClosed
 }

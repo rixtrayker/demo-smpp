@@ -18,7 +18,7 @@ import (
 func (s *Session) Send(msg queue.MessageData) error {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
 	ref := submitSM.SequenceNumber
-
+	
 	gh := append(msg.GatewayHistory, s.gateway)
 	s.mu.Lock()
 	s.messagesStatus[ref] = &MessageStatus{
@@ -95,6 +95,8 @@ func (s *Session) SendStream(messages <-chan queue.MessageData){
 }
 
 func (s *Session) SendStreamWithCancel(ctx context.Context, messages <-chan queue.MessageData) {
+	defer close(s.shutdown.streamClose)
+
 	for msg := range messages {
 		select {
 		case <-ctx.Done():
@@ -109,7 +111,6 @@ func (s *Session) SendStreamWithCancel(ctx context.Context, messages <-chan queu
 		}
 	}
 
-	close(s.shutdown.streamClose)
 }
 
 func (s *Session) handleSubmitSMResp(pd *pdu.SubmitSMResp) {
@@ -147,9 +148,8 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 	errCode := pd.CommandStatus.String()
 	status := ""
 
-	isNew := len(messageStatus.GatewayHistory) == 1
 	new_or_ported := "new"
-	if !isNew {
+	if len(messageStatus.GatewayHistory) > 1 {
 		new_or_ported = "ported"
 	}
 	
@@ -164,6 +164,7 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		} else {
 			if pd.CommandStatus == data.ESME_RSUBMITFAIL || pd.CommandStatus == data.ESME_RTHROTTLED {
 				s.retrySend(messageStatus, pd.CommandStatus.String())
+				status = "Resend"
 			} else {
 				status = "Failed"
 				metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
@@ -183,14 +184,13 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 }
 
 func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {
-	errors := make(chan error)
-	return s.resendChannel, errors
+	return s.portedStream.stream, s.portedStream.err
 }
 
 func (s *Session) retrySend(messageStatus *MessageStatus, status string) { 
 	metrics.ResendMessages.WithLabelValues(status, s.gateway).Inc()
 
-	s.resendChannel <- queue.MessageData{
+	s.resendStream.stream <- queue.MessageData{
 		Id:             messageStatus.SystemMessageID,
 		Gateway:        s.gateway,
 		Sender:         messageStatus.Sender,
@@ -220,7 +220,7 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 
 	metrics.PortedMessages.WithLabelValues("Ported", s.gateway, gateway).Inc()
 
-	s.resendChannel <- queue.MessageData{
+	s.portedStream.stream <- queue.MessageData{
 		Id:             messageStatus.SystemMessageID,
 		Gateway:        gateway,
 		Sender:         messageStatus.Sender,

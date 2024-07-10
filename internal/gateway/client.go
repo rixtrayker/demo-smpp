@@ -64,14 +64,15 @@ func (c *ClientBase) Start() {
 		return
 	}
 
-	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.cfg.Queues...), queue.WithPortedQueue(c.cfg.PortedQueue))
+	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.cfg.Queues...))
 	c.worker = w
 	if err != nil {
 		return
 	}
-	// c.wg.Add(1)
+
+	portedFinished := make(chan struct{})
 	go func(){
-		defer c.wg.Done()
+		defer close(portedFinished)
 		c.runPorted()
 	}()
 
@@ -89,39 +90,38 @@ func (c *ClientBase) Start() {
 	logrus.Infof("PushMessage len: %d", len(messages))
 	bgCtx := context.Background()
 	for msg := range messages {
-		w.PushMessage(bgCtx, "resend", msg)
-		// c.wg.Done()
+		w.PushMessage(bgCtx,  "go-" + c.cfg.Name + "-resend", msg)
 	}
-
+	
+	<-portedFinished
 	// send close signal to unblock stopping and closing and inside Stop() it waits for running Queue calls
 	w.Finished()
-
-	// for wait random time and check len c.session.ResendChannel then close it
 }
 
-func(c *ClientBase) runPorted(){
-	msg, _ := c.session.StreamPorted()
-	// make sure it gets empty
-	semaphore := make(chan struct{}, 50) // Create a semaphore with a capacity of 50
-	for msg := range msg {
-		semaphore <- struct{}{} // Acquire a semaphore slot
-		go func(m queue.MessageData) {
-			defer func() { <-semaphore }() // Release the semaphore slot when done
-			err := c.worker.PushPorted(c.ctx, m)
-			if err != nil {
-				logrus.WithError(err).Error("pushing failed failed sending message")
-			}
-		}(msg)
-	}
-	// Wait for all goroutines to finish
-	for i := 0; i < cap(semaphore); i++ {
-		semaphore <- struct{}{}
-	}
-	c.session.ClosePorted()
+func (c *ClientBase) runPorted() {
+    msg, _ := c.session.StreamPorted()
+    semaphore := make(chan struct{}, 50)
+    var wg sync.WaitGroup
+
+    for m := range msg {
+        semaphore <- struct{}{} // Acquire a semaphore slot
+        wg.Add(1) // Increment the WaitGroup counter
+        go func(m queue.MessageData) {
+            defer wg.Done() // Decrement the WaitGroup counter when done
+            defer func() { <-semaphore }() // Release the semaphore slot when done
+            err := c.worker.PushPorted(c.ctx, m)
+            if err != nil {
+                logrus.WithError(err).Error("pushing failed failed sending message")
+            }
+        }(m)
+    }
+
+    wg.Wait() // Wait for all goroutines to finish
+
+    close(semaphore) // Close the semaphore channel
 }
 
 func (c *ClientBase) Stop() {
 	c.session.Stop()
-	// c.wg.Wait()
 	c.worker.Stop()
 }

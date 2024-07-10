@@ -45,10 +45,11 @@ type QueueMessage struct {
 	Sender       string          `json:"sender"`
 	PhoneNumbers []int64 	     `json:"phone_numbers"`
 	Text         string          `json:"text"`
+	GatewayHistory []string 	 `json:"gateway_history"`
 }
 
 type MessageData struct {
-	Id             int64     `json:"id"`
+	Id             int64    `json:"id"`
 	Gateway        string   `json:"gateway"`
 	Sender         string   `json:"sender"`
 	Number         string   `json:"number"`
@@ -65,7 +66,7 @@ func (m *QueueMessage) Deflate() []MessageData {
 			Sender:         m.Sender,
 			Number:         fmt.Sprintf("%d", number),
 			Text:           m.Text,
-			GatewayHistory: []string{},
+			GatewayHistory: m.GatewayHistory,
 		})
 	}
 	return data
