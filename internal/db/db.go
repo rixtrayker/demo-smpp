@@ -19,7 +19,7 @@ var (
 
 func connect() error {
 	var err error
-	cfg := config.LoadConfig().DatabaseConfig
+	cfg := config.LoadConfig("").DatabaseConfig
 
 	if cfg == (config.DatabaseConfig{}) {
 		return errors.New("DB config is empty")

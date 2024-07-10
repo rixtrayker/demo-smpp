@@ -14,13 +14,14 @@ import (
 	"go.uber.org/atomic"
 )
 
+var ii int64 = 0;
+var jj int64 = 0;
 type Worker struct {
     ctx            context.Context
     cancel         context.CancelFunc
     redis          *redis.Client
     decoder        *Decoder
     queues         []string
-    portedQueue    string
     errors         chan error
     rateLimitCount *atomic.Int64
     wg             sync.WaitGroup
@@ -35,15 +36,9 @@ func WithQueues(queues ...string) Option {
     }
 }
 
-func WithPortedQueue(queue string) Option {
-    return func(w *Worker) {
-        w.portedQueue = queue
-    }
-}
-
 func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
     decoder := NewDecoder()
-    cfg := config.LoadConfig()
+    cfg := config.LoadConfig("")
 
     client := redis.NewClient(&redis.Options{
         PoolSize: 1000,
@@ -128,16 +123,21 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
         defer w.wg.Done()
         defer close(data)
         for msgQ := range messages {
+            logrus.Infof("msgQ: %d", ii)
             for _, msg := range msgQ.Deflate() {
+                logrus.Infof("deflate: %d", jj)
                 data <- msg
+                jj++
             }
+            ii++
         }
+        logrus.Infof("Shutting deflate len: %d", len(data))
     }()
     return data, errChan
 }
 
 func (w *Worker) PushPorted(ctx context.Context, message MessageData) error {
-   return w.PushMessage(ctx, w.portedQueue, message)
+   return w.PushMessage(ctx, "go-"+message.Gateway+"-ported", message)
 }
 
 func (w *Worker) PushMessage(ctx context.Context, queue string, message MessageData) error {
