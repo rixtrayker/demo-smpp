@@ -53,12 +53,15 @@ func (s *Session) send(submitSM *pdu.SubmitSM) error {
 		return nil
 	} else {
 		s.retrySend(s.messagesStatus[submitSM.SequenceNumber], err.Error())
+		if err == gosmpp.ErrConnectionClosing {
+			logrus.Error("Connection closing")
+			return s.connectRetry(s.ctx)
+		}
 	}
 
 	return err
 }
 
-// allow send func
 
 func (s *Session) allowSend() bool {
 	if err := s.limiter.Wait(context.Background()); err == nil {

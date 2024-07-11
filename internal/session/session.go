@@ -26,6 +26,7 @@ const (
 )
 
 type Session struct {
+	ctx 			 context.Context
 	gateway           string
 	sessionType       SessionType
 	startTime         time.Time
@@ -56,7 +57,6 @@ type Session struct {
 
 type CloseSignals struct {
     streamClose   chan struct{}
-    portedClosed  chan struct{}
     closed        bool
 	mu            sync.Mutex
 }
@@ -152,10 +152,6 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 		SystemType: cfg.SystemType,
 	}
 
-	if err := session.connectSessions(); err != nil {
-		return nil, err
-	}
-
 	return session, nil
 }
 
@@ -164,6 +160,7 @@ func (s *Session) Start(ctx context.Context) error {
 	maxDelay := 10 * time.Second
 	factor := 2.0
 
+	s.ctx = ctx
 	for retries := 0; retries <= s.maxRetries; retries++ {
 		select {
 		case <-ctx.Done():
@@ -172,6 +169,7 @@ func (s *Session) Start(ctx context.Context) error {
 			if err := s.connectSessions(); err != nil {
 				delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
 				logrus.WithError(err).Errorf("Failed to create session for provider %s", s.gateway)
+				logrus.Infof("Retrying in (Backoff) : %v", delay)
 				time.Sleep(delay)
 			} else {
 				return nil
