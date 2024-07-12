@@ -316,6 +316,7 @@ func (s *Session) Stop() {
 
 	// close(s.portedChannel)
 	s.portedStream.Close()
+	s.resendStream.Close()
 	
     s.shutdown.mu.Lock()
 	if !s.shutdown.closed {

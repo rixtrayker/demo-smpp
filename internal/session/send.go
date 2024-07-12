@@ -103,6 +103,7 @@ func (s *Session) SendStreamWithCancel(ctx context.Context, messages <-chan queu
 	for msg := range messages {
 		select {
 		case <-ctx.Done():
+			s.resendStream.stream <- msg
 			return
 		default:
 			err := s.Send(msg)
@@ -175,15 +176,17 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		}
 	}
 
-	s.Write(&dtos.ReceiveLog{
-		SystemMessageID: messageStatus.SystemMessageID,
-		MessageID:    pd.MessageID,
-		Gateway:      s.gateway,
-		MobileNo:     messageStatus.Number,
-		MessageState: status,
-		ErrorCode:    errCode,
-		Data:         messageStatus.Text,
-	})
+	go func() {
+		s.Write(&dtos.ReceiveLog{
+			SystemMessageID: messageStatus.SystemMessageID,
+			MessageID:       pd.MessageID,
+			Gateway:         s.gateway,
+			MobileNo:        messageStatus.Number,
+			MessageState:    status,
+			ErrorCode:       errCode,
+			Data:            messageStatus.Text,
+		})
+	}()
 }
 
 func (s *Session) StreamPorted() (chan queue.MessageData, chan error) {

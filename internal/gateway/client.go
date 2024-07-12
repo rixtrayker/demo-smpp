@@ -85,14 +85,17 @@ func (c *ClientBase) Start() {
 
 	// cancelled := make(chan struct{})
 	// c.session.SendStreamWithCancel(c.ctx, messages, cancelled)
-	c.wg.Add(len(messages))
 	c.session.SendStreamWithCancel(c.ctx, messages)
 	logrus.Infof("PushMessage len: %d", len(messages))
 	bgCtx := context.Background()
+	// 151 msg from streams sizes
 	for msg := range messages {
 		w.PushMessage(bgCtx,  "go-" + c.cfg.Name + "-resend", msg)
 	}
-	
+	// latest 1 msg from cancelling
+	for msg := range c.session.StreamResend() {
+		w.PushMessage(bgCtx,  "go-" + c.cfg.Name + "-resend", msg)
+	}
 	<-portedFinished
 	// send close signal to unblock stopping and closing and inside Stop() it waits for running Queue calls
 	w.Finished()
