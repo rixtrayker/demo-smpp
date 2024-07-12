@@ -14,7 +14,6 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/sirupsen/logrus"
 )
-
 func (s *Session) Send(msg queue.MessageData) error {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
 	ref := submitSM.SequenceNumber
@@ -162,6 +161,7 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 	} else {
 		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" { // ensure logic
+			s.wg.Add(1)
 			go s.portMessage(messageStatus)
 			status = "Ported"
 			// metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
@@ -207,6 +207,7 @@ func (s *Session) retrySend(messageStatus *MessageStatus, status string) {
 }
 
 func (s *Session) portMessage(messageStatus *MessageStatus) {
+	defer s.wg.Done()
 	gateway, err := s.portGateway(messageStatus.GatewayHistory)
 	if err != nil {
 		metrics.PortedMessages.WithLabelValues("Failed", s.gateway, gateway).Inc()

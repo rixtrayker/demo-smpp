@@ -87,14 +87,13 @@ func (c *ClientBase) Start() {
 	// c.session.SendStreamWithCancel(c.ctx, messages, cancelled)
 	c.session.SendStreamWithCancel(c.ctx, messages)
 	logrus.Infof("PushMessage len: %d", len(messages))
-	bgCtx := context.Background()
 	// 151 msg from streams sizes
 	for msg := range messages {
-		w.PushMessage(bgCtx,  "go-" + c.cfg.Name + "-resend", msg)
+		w.PushMessage("go-" + c.cfg.Name + "-resend", msg)
 	}
 	// latest 1 msg from cancelling
 	for msg := range c.session.StreamResend() {
-		w.PushMessage(bgCtx,  "go-" + c.cfg.Name + "-resend", msg)
+		w.PushMessage("go-" + c.cfg.Name + "-resend", msg)
 	}
 	<-portedFinished
 	// send close signal to unblock stopping and closing and inside Stop() it waits for running Queue calls
@@ -103,7 +102,7 @@ func (c *ClientBase) Start() {
 
 func (c *ClientBase) runPorted() {
     msg, _ := c.session.StreamPorted()
-    semaphore := make(chan struct{}, 50)
+    semaphore := make(chan struct{}, 100)
     var wg sync.WaitGroup
 
     for m := range msg {
@@ -112,9 +111,9 @@ func (c *ClientBase) runPorted() {
         go func(m queue.MessageData) {
             defer wg.Done() // Decrement the WaitGroup counter when done
             defer func() { <-semaphore }() // Release the semaphore slot when done
-            err := c.worker.PushPorted(c.ctx, m)
+            err := c.worker.PushPorted(m)
             if err != nil {
-                logrus.WithError(err).Error("pushing failed failed sending message")
+                logrus.WithError(err).Error("pushing failed sending message")
             }
         }(m)
     }

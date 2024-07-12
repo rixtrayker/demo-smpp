@@ -18,6 +18,7 @@ var ii int64 = 0;
 var jj int64 = 0;
 type Worker struct {
     ctx            context.Context
+    sysCtx         context.Context
     cancel         context.CancelFunc
     redis          *redis.Client
     decoder        *Decoder
@@ -36,7 +37,7 @@ func WithQueues(queues ...string) Option {
     }
 }
 
-func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
+func NewWorker(sysCtx context.Context, options ...Option) (*Worker, error) {
     decoder := NewDecoder()
     cfg := config.LoadConfig("")
 
@@ -48,7 +49,7 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
         ReadTimeout:  5 * time.Second, // or -1 for no timeout
         WriteTimeout: 10 * time.Second,
     })
-
+    ctx := context.Background()
     _, err := client.Ping(ctx).Result()
     if err != nil {
         logrus.WithError(err).Fatal("Failed to connect to Redis")
@@ -57,6 +58,7 @@ func NewWorker(ctx context.Context, options ...Option) (*Worker, error) {
 
     worker := &Worker{
         ctx:            ctx,
+        sysCtx:         sysCtx,
         redis:          client,
         decoder:        decoder,
         errors:         make(chan error, 100),
@@ -97,7 +99,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
 
         for {
             select {
-            case <-w.ctx.Done():
+            case <-w.sysCtx.Done():
                 logrus.Info("Stream queue shutting down...")
                 return
             default:
@@ -136,11 +138,11 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
     return data, errChan
 }
 
-func (w *Worker) PushPorted(ctx context.Context, message MessageData) error {
-   return w.PushMessage(ctx, "go-"+message.Gateway+"-ported", message)
+func (w *Worker) PushPorted(message MessageData) error {
+   return w.PushMessage("go-"+message.Gateway+"-ported", message)
 }
 
-func (w *Worker) PushMessage(ctx context.Context, queue string, message MessageData) error {
+func (w *Worker) PushMessage(queue string, message MessageData) error {
     w.wg.Add(1)
     defer w.wg.Done()
     var err error
@@ -152,7 +154,7 @@ func (w *Worker) PushMessage(ctx context.Context, queue string, message MessageD
         logrus.Errorf("Failed to marshal message: %v", message)
         return err
     }
-    _, err = w.redis.RPush(ctx, queue, string(strMsg)).Result()
+    _, err = w.redis.RPush(w.ctx, queue, string(strMsg)).Result()
     if err != nil {
         logrus.WithError(err).Error("Failed to push message to queue")
         return err
