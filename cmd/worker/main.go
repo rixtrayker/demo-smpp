@@ -8,15 +8,33 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/phuslu/log"
 	"github.com/rixtrayker/demo-smpp/internal/app"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/sirupsen/logrus"
 )
 
-func main() {
-	go WritePID(".PID")
+var logger log.Logger
 
+func main() {
+	logger = log.Logger{
+		Level: log.InfoLevel,
+		TimeFormat: "2006-01-02 15:04:05",
+		Writer: &log.FileWriter{
+			Filename: "run.log",
+			MaxBackups: 14,
+			LocalTime:  false,
+		},
+	}
+	
+	// log with args
+	logger.Info().Int("pid", os.Getpid()).Strs("args", os.Args).Msg("Run")
+	
+	err := WritePID(".PID")
+	if err != nil {
+		logger.Error().Err(err).Msg("Error writing PID file")
+	}
 	// custom cfg file path from flags main args
 	//args 
 
@@ -37,6 +55,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		<-quit
+		logger.Info().Msg("Shutting down gracefully...")
 		logrus.Println("Shutting down gracefully...")
 		cancel()
 	}()
@@ -50,6 +69,7 @@ func main() {
 	}()
 
 	wg.Wait()
+	logger.Info().Msg("Application shutdown complete.")
 	logrus.Println("Application shutdown complete.")
 }
 
