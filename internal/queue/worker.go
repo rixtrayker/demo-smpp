@@ -7,19 +7,20 @@ import (
 
 	"encoding/json"
 
+	"github.com/phuslu/log"
+	"github.com/sirupsen/logrus"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/rixtrayker/demo-smpp/internal/config"
-	"github.com/sirupsen/logrus"
 
 	"go.uber.org/atomic"
 )
 
-var ii int64 = 0;
-var jj int64 = 0;
 type Worker struct {
     ctx            context.Context
     sysCtx         context.Context
     cancel         context.CancelFunc
+    logger         log.Logger
     redis          *redis.Client
     decoder        *Decoder
     queues         []string
@@ -60,6 +61,16 @@ func NewWorker(sysCtx context.Context, options ...Option) (*Worker, error) {
         ctx:            ctx,
         sysCtx:         sysCtx,
         redis:          client,
+        logger:         log.Logger{
+            Level: log.InfoLevel,
+            Writer: &log.FileWriter{
+                Filename:   "queue.log",
+                // MaxSize:    50 * 1024 * 1024,
+                // MaxSize:    100<<20,
+                MaxBackups: 14,
+                LocalTime:  false,
+            },
+        },
         decoder:        decoder,
         errors:         make(chan error, 100),
         rateLimitCount: atomic.NewInt64(0),
@@ -80,7 +91,7 @@ func (w *Worker) Consume() (QueueMessage, error) {
         if err == redis.Nil {
             return QueueMessage{}, nil
         }
-        logrus.WithError(err).Error("Failed to consume message from queue")
+        w.logger.Error().Err(err).Msg("Failed to consume message from queue")
         return QueueMessage{}, err
     }
 
@@ -100,7 +111,7 @@ func (w *Worker) streamQueueMessage() (<-chan QueueMessage, <-chan error) {
         for {
             select {
             case <-w.sysCtx.Done():
-                logrus.Info("Stream queue shutting down...")
+                w.logger.Info().Msg("Stream queue shutting down...")
                 return
             default:
                 result, err := w.Consume()
@@ -125,15 +136,10 @@ func (w *Worker) Stream() (<-chan MessageData, <-chan error) {
         defer w.wg.Done()
         defer close(data)
         for msgQ := range messages {
-            logrus.Infof("msgQ: %d", ii)
             for _, msg := range msgQ.Deflate() {
-                logrus.Infof("deflate: %d", jj)
                 data <- msg
-                jj++
             }
-            ii++
         }
-        logrus.Infof("Shutting deflate len: %d", len(data))
     }()
     return data, errChan
 }
@@ -150,8 +156,8 @@ func (w *Worker) PushMessage(queue string, message MessageData) error {
     // encode message to json
     strMsg, err = json.Marshal(message)
     if err != nil {
-        logrus.WithError(err).Error("Failed to marshal message")
-        logrus.Errorf("Failed to marshal message: %v", message)
+        w.logger.Error().Err(err).Msg("Failed to marshal message")
+        w.logger.Error().Object("message", &message).Msg("Failed to marshal ")
         return err
     }
     _, err = w.redis.RPush(w.ctx, queue, string(strMsg)).Result()
@@ -163,9 +169,9 @@ func (w *Worker) PushMessage(queue string, message MessageData) error {
 }
 
 func (w *Worker) Stop() {
-    logrus.Info("Worker shutdown initiated")
+    w.logger.Info().Msg("Worker shutdown initiated")
     w.wg.Wait()
-    logrus.Info("w.wg wait done")
+    w.logger.Info().Msg("w.wg wait done")
     w.Close()
 }
 
@@ -178,7 +184,7 @@ func (w *Worker) Close() error {
     w.wg.Wait()
     err := w.redis.Close()
     if err != nil {
-        logrus.WithError(err).Error("Failed to close Redis client")
+        w.logger.Error().Err(err).Msg("Failed to close Redis client")
         return err
     }
     close(w.errors)

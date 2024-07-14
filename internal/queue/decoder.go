@@ -3,6 +3,8 @@ package queue
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/phuslu/log"
 )
 
 type Decoder struct {
@@ -55,6 +57,14 @@ type MessageData struct {
 	Number         string   `json:"number"`
 	Text           string   `json:"text"`
 	GatewayHistory []string `json:"gateway_history"`
+}
+
+func (m *QueueMessage) MarshalObject(e *log.Entry) {
+	e.Str("message_id", m.MessageID).Str("provider", m.Provider).Str("sender", m.Sender).Ints("phone_numbers", m.PhoneNumbers).Str("text", m.Text).Strs("gateway_history", m.GatewayHistory)
+}
+
+func (m *MessageData) MarshalObject(e *log.Entry) {
+	e.Int64("id", m.Id).Str("gateway", m.Gateway).Str("sender", m.Sender).Str("number", m.Number).Str("text", m.Text).Strs("gateway_history", m.GatewayHistory)
 }
 
 func (m *QueueMessage) Deflate() []MessageData {
