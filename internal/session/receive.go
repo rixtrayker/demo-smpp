@@ -9,7 +9,6 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/models"
-	"github.com/sirupsen/logrus"
 )
 
 func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
@@ -17,14 +16,14 @@ func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
 	msg, err := pd.Message.GetMessage()
 	status := ""
 	if err != nil {
-		logError(err, pd)
+		s.logError(err, pd)
 		return
 	}
 
 	errCode := extractField(msg, "err:")
 	if errCode == "021" && strings.EqualFold(s.gateway, "STC") {
 		if err := s.deliverPort(pd); err != nil {
-			logrus.WithError(err).Info("Error in deliverPort")
+			s.logger.Error().Err(err).Msg("Error in deliverPort")
 			status = "Porting Failed"
 		}
 	}
@@ -33,12 +32,9 @@ func (s *Session) HandleDeliverSM(pd *pdu.DeliverSM) {
 	s.Write(&data)
 }
 
-func logError(err error, pd *pdu.DeliverSM) {
-	logrus.WithError(err).Info("Error getting DeliverSM message")
-	logrus.WithFields(logrus.Fields{
-		"source": pd.SourceAddr.Address(),
-		"dest":   pd.DestAddr.Address(),
-	}).Info("Error getting DeliverSM message")
+func (s *Session) logError(err error, pd *pdu.DeliverSM) {
+	s.logger.Error().Err(err).Msg("Error getting DeliverSM message")
+	s.logger.Error().Str("source", pd.SourceAddr.Address()).Str("dest", pd.DestAddr.Address()).Msg("Error getting DeliverSM message")
 }
 
 func extractField(message, prefix string) string {
@@ -53,10 +49,10 @@ func extractField(message, prefix string) string {
 	return ""
 }
 
-func getMessageData(pd *pdu.DeliverSM) (string, string, string, error) {
+func (s *Session) getMessageData(pd *pdu.DeliverSM) (string, string, string, error) {
 	message, err := pd.Message.GetMessage()
 	if err != nil {
-		logrus.WithError(err).Info("Error getting DeliverSM message")
+		s.logger.Error().Err(err).Msg("Error getting DeliverSM message")
 		return "", "", "", err
 	}
 
@@ -70,9 +66,9 @@ func getMessageData(pd *pdu.DeliverSM) (string, string, string, error) {
 func (s *Session) prepareResult(pd *pdu.DeliverSM, status string) dtos.ReceiveLog {
 	msgID := getReceiptedMessageID(pd)
 	mobileNo := pd.SourceAddr.Address()
-	submitID, _, errCode, err := getMessageData(pd)
+	submitID, _, errCode, err := s.getMessageData(pd)
 	if err != nil {
-		logrus.WithError(err).Info("Got error when getting DeliverSM message")
+		s.logger.Error().Err(err).Msg("Got error when getting DeliverSM message")
 	}
 	if status == "" {
 		if errCode == "000" {
@@ -117,7 +113,7 @@ func (s *Session) deliverPort(pd *pdu.DeliverSM) error {
 
 	if result.Error != nil {
 		metrics.PortedMessages.WithLabelValues("db-error", "stc", "zain").Inc()
-		logrus.WithError(result.Error).Info("Error getting DlrSms")
+		s.logger.Error().Err(result.Error).Msg("Error getting DlrSms")
 		return result.Error
 	}
 

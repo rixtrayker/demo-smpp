@@ -12,7 +12,6 @@ import (
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
-	"github.com/sirupsen/logrus"
 )
 func (s *Session) Send(msg queue.MessageData) error {
 	submitSM := newSubmitSM(msg.Sender, msg.Number, msg.Text)
@@ -53,7 +52,7 @@ func (s *Session) send(submitSM *pdu.SubmitSM) error {
 	} else {
 		s.retrySend(s.messagesStatus[submitSM.SequenceNumber], err.Error())
 		if err == gosmpp.ErrConnectionClosing {
-			logrus.Error("Connection closing")
+			s.logger.Error().Msg("Connection closing")
 			return s.connectRetry(s.ctx)
 		}
 	}
@@ -79,7 +78,7 @@ func (s *Session) SendStream(messages <-chan queue.MessageData){
 			err := s.Send(m)
 			if err != nil {
 				if err == gosmpp.ErrConnectionClosing {
-					logrus.Error("Connection closing")
+					s.logger.Error().Msg("Connection closing")
 				}
 				// go func(err error) {
 				// 		errChan <- err
@@ -108,7 +107,7 @@ func (s *Session) SendStreamWithCancel(ctx context.Context, messages <-chan queu
 			err := s.Send(msg)
 			if err != nil {
 				if err == gosmpp.ErrConnectionClosing {
-					logrus.Error("Connection closing")
+					s.logger.Error().Msg("Connection closing")
 				}
 			}
 		}
@@ -221,7 +220,7 @@ func (s *Session) portMessage(messageStatus *MessageStatus) {
 			Data:        	 messageStatus.Text,
 		})
 
-		logrus.Error(err)
+		s.logger.Error().Err(err).Msg("Unable to port message")
 		return
 	}
 

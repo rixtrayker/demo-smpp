@@ -8,12 +8,12 @@ import (
 
 	"github.com/linxGnu/gosmpp"
 	"github.com/linxGnu/gosmpp/pdu"
+	"github.com/phuslu/log"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/dtos"
 	"github.com/rixtrayker/demo-smpp/internal/metrics"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 )
 
@@ -27,6 +27,7 @@ const (
 
 type Session struct {
 	ctx 			 context.Context
+	logger 			 log.Logger
 	gateway           string
 	sessionType       SessionType
 	startTime         time.Time
@@ -110,6 +111,16 @@ func WithResponseWriter(responseWriter *response.Writer) Option {
 
 func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session, error) {
 	session := &Session{
+		logger: 		  log.Logger{
+			Level:      log.InfoLevel,
+			TimeFormat: "15:04:05",
+			Caller:     1,
+			Writer: &log.FileWriter{
+				Filename:   "smpp.log",
+				MaxBackups: 14,
+				LocalTime:  false,
+			},
+		},
 		gateway:           cfg.Name,
 		startTime:         time.Now(),
 		concatenated:      make(map[uint8][]string),
@@ -168,8 +179,8 @@ func (s *Session) Start(ctx context.Context) error {
 		default:
 			if err := s.connectSessions(); err != nil {
 				delay := calculateBackoff(initialDelay, maxDelay, factor, retries)
-				logrus.WithError(err).Errorf("Failed to create session for provider %s", s.gateway)
-				logrus.Infof("Retrying in (Backoff) : %v", delay)
+				s.logger.Error().Err(err).Str("provider", s.gateway).Msg("Failed to create session")
+				s.logger.Info().Msgf("Retrying in (Backoff) : %v", delay)
 				time.Sleep(delay)
 			} else {
 				return nil
@@ -229,21 +240,21 @@ func (s *Session) getSettings() gosmpp.Settings {
 }
 
 func (s *Session) handleSubmitError(p pdu.PDU, err error) {
-	logrus.WithError(err).Error("SubmitPDU error")
+	s.logger.Error().Err(err).Msg("SubmitPDU error")
 }
 
 func (s *Session) handleReceivingError(err error) {
-	logrus.WithError(err).Error("Receiving PDU/Network error")
+	s.logger.Error().Err(err).Msg("Receiving PDU/Network error")
 }
 
 func (s *Session) handleRebindingError(err error) {
 	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
-	logrus.WithError(err).Error("Rebinding error")
+	s.logger.Error().Err(err).Msg("Rebinding error")
 }
 
 func (s *Session) handleClosed(state gosmpp.State) {
 	metrics.ActiveSessions.Dec()
-	logrus.Info("Session closed: ", state)
+	s.logger.Info().Msg("Session closed")	
 }
 
 func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
@@ -253,7 +264,7 @@ func handlePDU(s *Session) func(pdu.PDU) (pdu.PDU, bool) {
 
 			// Handle BindResp if needed
 		case *pdu.Unbind:
-			logrus.Info("Unbind Received")
+			s.logger.Info().Msg("Unbind Received")
 			metrics.ActiveSessions.Dec()
 			return pd.GetResponse(), true
 		case *pdu.UnbindResp:
@@ -300,7 +311,6 @@ func (s *Session) Stop() {
 	<-s.shutdown.streamClose
 	
 	s.wg.Wait()
-	logrus.Info("s.wg wait done")
 
 	if s.smppSessions.transceiver != nil {
 		s.smppSessions.transceiver.Close()
@@ -325,7 +335,6 @@ func (s *Session) Stop() {
 	}
 	s.shutdown.mu.Unlock()
 
-	logrus.Info("s.deliveryWg wait done")
 	s.deliveryWg.Wait()
 
 	metrics.SessionDuration.Observe(time.Since(s.startTime).Seconds())
