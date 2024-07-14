@@ -1,13 +1,19 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
+
 	"sync"
 
+	gormlogger "github.com/phuslu/log-contrib/gorm"
+
+	"github.com/phuslu/log"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var ErrDBNotConnected = errors.New("database connection not established")
@@ -15,6 +21,7 @@ var ErrDBNotConnected = errors.New("database connection not established")
 var (
 	DB     *gorm.DB
 	once   sync.Once
+	Logger logger.Interface
 )
 
 func connect() error {
@@ -26,6 +33,17 @@ func connect() error {
 	}
 
 	once.Do(func() {
+		Logger = gormlogger.New(&log.Logger{
+			Level:      log.InfoLevel,
+			TimeFormat: "15:04:05",
+			Caller:     1,
+			Writer: &log.FileWriter{
+				Filename:   "db.log",
+				MaxBackups: 14,
+				LocalTime:  false,
+			},
+		}, logger.Config{}, false)
+
 		dataSourceName := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=true&parseTime=true",
 			cfg.User,
 			cfg.Password,
@@ -34,14 +52,17 @@ func connect() error {
 			cfg.DBName)
 
         
-		DB, err = gorm.Open(mysql.Open(dataSourceName), &gorm.Config{})
+		DB, err = gorm.Open(mysql.Open(dataSourceName), &gorm.Config{
+			Logger: Logger,
+		})
 		if err != nil {
 			err = fmt.Errorf("failed to connect to database: %w", err)
+			Logger.Error(context.Background(),err.Error())
 			return
 		}
 		sqlDB, err := DB.DB()
 		if err != nil {
-			err = fmt.Errorf("failed to get underlying sql.DB: %w", err)
+			Logger.Error(context.Background(),fmt.Sprintf("failed to get underlying sql.DB: %v", err))
 			return
 		}
 		sqlDB.SetMaxOpenConns(cfg.MaxConn)
@@ -68,7 +89,9 @@ func Close() error {
 
 	sqlDB, err := DB.DB()
 	if err != nil {
-		return fmt.Errorf("failed to get underlying sql.DB: %w", err)
+		err = fmt.Errorf("failed to get underlying sql.DB: %w", err)
+		Logger.Error(context.Background(),err.Error())
+		return err
 	}
 
 	return sqlDB.Close()

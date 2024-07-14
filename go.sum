@@ -50,6 +50,11 @@ github.com/mitchellh/copystructure v1.2.0 h1:vpKXTN4ewci03Vljg/q9QvCGUDttBOGBIa1
 github.com/mitchellh/copystructure v1.2.0/go.mod h1:qLl+cE2AmVv+CoeAwDPye/v+N2HKCj9FbZEVFJRxO9s=
 github.com/mitchellh/reflectwalk v1.0.2 h1:G2LzWKi524PWgd3mLHV8Y5k7s6XUvT0Gef6zxSIeXaQ=
 github.com/mitchellh/reflectwalk v1.0.2/go.mod h1:mSTlrgnPZtwu0c4WaC2kGObEpuNDbx0jmZXqmk4esnw=
+github.com/phuslu/log v1.0.106/go.mod h1:F8osGJADo5qLK/0F88djWwdyoZZ9xDJQL1HYRHFEkS0=
+github.com/phuslu/log v1.0.107 h1:L6lEs2dKVgnXWapoz98YqmobxhtwPAfghUjluiSbPJ4=
+github.com/phuslu/log v1.0.107/go.mod h1:F8osGJADo5qLK/0F88djWwdyoZZ9xDJQL1HYRHFEkS0=
+github.com/phuslu/log-contrib/gorm v0.0.0-20240622164905-82dca04dc910 h1:TaF3gFgqBKJyJQ1PFKBYcP0BBwrKXxE700CNdurgk44=
+github.com/phuslu/log-contrib/gorm v0.0.0-20240622164905-82dca04dc910/go.mod h1:Npw7pB1RQJ6Ff8uxaas98R8dpjYREJjIPnYYFbMqBqQ=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

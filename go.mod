@@ -7,6 +7,8 @@ require (
 	github.com/knadh/koanf/providers/file v0.1.0
 	github.com/knadh/koanf/v2 v2.1.1
 	github.com/linxGnu/gosmpp v0.2.1
+	github.com/phuslu/log v1.0.107
+	github.com/phuslu/log-contrib/gorm v0.0.0-20240622164905-82dca04dc910
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/sirupsen/logrus v1.9.3
