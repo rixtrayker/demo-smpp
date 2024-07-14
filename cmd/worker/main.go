@@ -18,6 +18,7 @@ import (
 var logger log.Logger
 
 func main() {
+	
 	logger = log.Logger{
 		Level: log.InfoLevel,
 		TimeFormat: "2006-01-02 15:04:05",
@@ -27,9 +28,15 @@ func main() {
 			LocalTime:  false,
 		},
 	}
-	
+	cfgFile := ""
+
+	if len(os.Args) > 1 {
+		cfgFile = os.Args[1]
+		logger.Info().Int("pid", os.Getpid()).Strs("args", os.Args[1:]).Msg("Run")
+	} else {
+		logger.Info().Int("pid", os.Getpid()).Msg("Run")
+	}
 	// log with args
-	logger.Info().Int("pid", os.Getpid()).Strs("args", os.Args).Msg("Run")
 	
 	err := WritePID(".PID")
 	if err != nil {
@@ -38,11 +45,7 @@ func main() {
 	// custom cfg file path from flags main args
 	//args 
 
-	cfgFile := ""
-
-	if len(os.Args) > 1 {
-		cfgFile = os.Args[1]
-	}
+	
 	cfg := config.LoadConfig(cfgFile)
 
 	quit := make(chan os.Signal, 1)

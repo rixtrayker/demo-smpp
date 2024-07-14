@@ -24,6 +24,7 @@ func (s *Session) connectRetry(ctx context.Context) error {
 		default:
 			if err := s.connectSessions(); err != nil {
 				logrus.WithError(err).Error("Failed to reconnect")
+				s.logger.Error().Err(err).Msg("Failed to reconnect")
 				time.Sleep(2 * time.Second)
 			} else {
 				return nil

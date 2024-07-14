@@ -162,7 +162,7 @@ func (w *Worker) PushMessage(queue string, message MessageData) error {
     }
     _, err = w.redis.RPush(w.ctx, queue, string(strMsg)).Result()
     if err != nil {
-        logrus.WithError(err).Error("Failed to push message to queue")
+        w.logger.Error().Err(err).Msg("Failed to push message to queue")
         return err
     }
     return nil
