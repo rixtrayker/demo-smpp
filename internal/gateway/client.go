@@ -5,15 +5,16 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/phuslu/log"
 	"github.com/rixtrayker/demo-smpp/internal/app/handlers"
 	"github.com/rixtrayker/demo-smpp/internal/config"
 	"github.com/rixtrayker/demo-smpp/internal/queue"
 	"github.com/rixtrayker/demo-smpp/internal/response"
 	"github.com/rixtrayker/demo-smpp/internal/session"
-	"github.com/sirupsen/logrus"
 )
 
 type ClientBase struct {
+	logger  log.Logger
 	providerName string
 	ctx    context.Context
 	wg     sync.WaitGroup
@@ -42,6 +43,16 @@ func NewClientBase(ctx context.Context, cfg config.Provider, name string) (*Clie
 	}
 	// state, _ := state.NewState(ctx)
 	return &ClientBase{
+		logger: log.Logger{
+			Level: log.InfoLevel,
+			Caller: 1,
+			TimeFormat: "15:04:05",
+			Writer: &log.FileWriter{
+				Filename: "app.log",
+				MaxBackups: 14,
+				LocalTime: false,
+			},
+		},
 		providerName: name,
 		ctx:    ctx,
 		wg:     sync.WaitGroup{},
@@ -67,6 +78,7 @@ func (c *ClientBase) Start() {
 	w, err := queue.NewWorker(c.ctx, queue.WithQueues(c.cfg.Queues...))
 	c.worker = w
 	if err != nil {
+		c.logger.Error().Err(err).Msg("Failed to create worker")
 		return
 	}
 
@@ -79,14 +91,13 @@ func (c *ClientBase) Start() {
 	messages, errChan := w.Stream()
 	go func() {
         for err := range errChan {
-           logrus.WithError(err).Error("Failed to stream message in func Stream") 
+		   c.logger.Error().Err(err).Msg("Failed to stream message")
         }
     }()
 
 	// cancelled := make(chan struct{})
 	// c.session.SendStreamWithCancel(c.ctx, messages, cancelled)
 	c.session.SendStreamWithCancel(c.ctx, messages)
-	logrus.Infof("PushMessage len: %d", len(messages))
 	// 151 msg from streams sizes
 	for msg := range messages {
 		w.PushMessage("go-" + c.cfg.Name + "-resend", msg)
@@ -113,7 +124,7 @@ func (c *ClientBase) runPorted() {
             defer func() { <-semaphore }() // Release the semaphore slot when done
             err := c.worker.PushPorted(m)
             if err != nil {
-                logrus.WithError(err).Error("pushing failed sending message")
+				c.logger.Error().Err(err).Msg("pushing failed sending message")
             }
         }(m)
     }
