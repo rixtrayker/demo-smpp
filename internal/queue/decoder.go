@@ -60,7 +60,7 @@ type MessageData struct {
 }
 
 func (m *QueueMessage) MarshalObject(e *log.Entry) {
-	e.Str("message_id", m.MessageID).Str("provider", m.Provider).Str("sender", m.Sender).Ints("phone_numbers", m.PhoneNumbers).Str("text", m.Text).Strs("gateway_history", m.GatewayHistory)
+	e.Str("message_id", m.MessageID).Str("provider", m.Provider).Str("sender", m.Sender).Ints64("phone_numbers", m.PhoneNumbers).Str("text", m.Text).Strs("gateway_history", m.GatewayHistory)
 }
 
 func (m *MessageData) MarshalObject(e *log.Entry) {
