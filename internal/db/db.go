@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"sync"
 
@@ -34,7 +35,7 @@ func connect() error {
 
 	once.Do(func() {
 		Logger = gormlogger.New(&log.Logger{
-			Level:      log.InfoLevel,
+			Level:      log.WarnLevel,
 			TimeFormat: "15:04:05",
 			Caller:     1,
 			Writer: &log.FileWriter{
@@ -42,7 +43,10 @@ func connect() error {
 				MaxBackups: 14,
 				LocalTime:  false,
 			},
-		}, logger.Config{}, false)
+		}, logger.Config{
+			SlowThreshold:             150 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+		}, false)
 
 		dataSourceName := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=true&parseTime=true",
 			cfg.User,
