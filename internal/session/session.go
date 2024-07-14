@@ -116,7 +116,7 @@ func NewSession(cfg config.Provider, h *PDUHandler, options ...Option) (*Session
 			TimeFormat: "15:04:05",
 			Caller:     1,
 			Writer: &log.FileWriter{
-				Filename:   "smpp.log",
+				Filename:   "logs/smpp/smpp.log",
 				MaxBackups: 14,
 				LocalTime:  false,
 			},

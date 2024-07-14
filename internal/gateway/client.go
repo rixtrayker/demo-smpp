@@ -48,7 +48,7 @@ func NewClientBase(ctx context.Context, cfg config.Provider, name string) (*Clie
 			Caller: 1,
 			TimeFormat: "15:04:05",
 			Writer: &log.FileWriter{
-				Filename: "app.log",
+				Filename: "logs/app/app.log",
 				MaxBackups: 14,
 				LocalTime: false,
 			},

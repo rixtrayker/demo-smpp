@@ -5,6 +5,7 @@
 todo
 /js/node_modules
 *.log
+logs/*.log
 config.yaml
 .DS_Store
 internal/.DS_Store

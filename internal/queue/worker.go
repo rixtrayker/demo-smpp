@@ -64,7 +64,7 @@ func NewWorker(sysCtx context.Context, options ...Option) (*Worker, error) {
         logger:         log.Logger{
             Level: log.InfoLevel,
             Writer: &log.FileWriter{
-                Filename:   "queue.log",
+                Filename:   "logs/queue/queue.log",
                 // MaxSize:    50 * 1024 * 1024,
                 // MaxSize:    100<<20,
                 MaxBackups: 14,

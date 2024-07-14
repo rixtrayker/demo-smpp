@@ -36,7 +36,7 @@ func NewResponseWriter() *Writer {
 				Caller: 1,
 				TimeFormat: "15:04:05",
 				Writer: &log.FileWriter{
-					Filename: "dlr_sms.log",
+					Filename: "logs/dlr-sms/dlr-sms.log",
 					MaxBackups: 30,
 					LocalTime: false,
 				},

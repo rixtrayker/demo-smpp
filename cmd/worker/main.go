@@ -23,7 +23,7 @@ func main() {
 		Level: log.InfoLevel,
 		TimeFormat: "2006-01-02 15:04:05",
 		Writer: &log.FileWriter{
-			Filename: "run.log",
+			Filename: "logs/run/run.log",
 			MaxBackups: 14,
 			LocalTime:  false,
 		},

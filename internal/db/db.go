@@ -39,7 +39,7 @@ func connect() error {
 			TimeFormat: "15:04:05",
 			Caller:     1,
 			Writer: &log.FileWriter{
-				Filename:   "db.log",
+				Filename:   "logs/db/db.log",
 				MaxBackups: 14,
 				LocalTime:  false,
 			},
