@@ -18,6 +18,9 @@ import (
 var logger log.Logger
 
 func main() {
+	// make sure the logs folders exists
+	checkLogDirs()
+
 	
 	logger = log.Logger{
 		Level: log.InfoLevel,
@@ -89,4 +92,13 @@ func WritePID(filename string) error {
 		return fmt.Errorf("error writing PID to file: %w", err)
 	}
 	return nil
+}
+
+func checkLogDirs() {
+	dirs := []string{"logs/run", "logs/app", "logs/db", "logs/smpp", "logs/queue", "logs/dlr-sms"}
+	for _, dir := range dirs {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			os.MkdirAll(dir, 0700)
+		}
+	}
 }
