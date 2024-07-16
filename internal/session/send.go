@@ -160,9 +160,15 @@ func (s *Session) processSubmitSMResp(pd *pdu.SubmitSMResp) {
 		metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 	} else {
 		if pd.CommandStatus == data.ESME_RINVDSTADR || s.gateway != "stc" { // ensure logic
-			s.wg.Add(1)
-			go s.portMessage(messageStatus)
-			status = "Ported"
+			if len(messageStatus.GatewayHistory) == 3 {
+				gh := messageStatus.GatewayHistory
+				metrics.TotallyFailedPortedMessages.WithLabelValues(gh[0], gh[1], gh[2]).Inc()
+				status = "Porting Failed"
+			} else {
+				s.wg.Add(1)
+				go s.portMessage(messageStatus)
+				status = "Ported"
+			}
 			// metrics.SentMessages.WithLabelValues(status, s.gateway, new_or_ported).Inc()
 		} else {
 			if pd.CommandStatus == data.ESME_RSUBMITFAIL || pd.CommandStatus == data.ESME_RTHROTTLED {
@@ -255,12 +261,15 @@ func (s *Session) portGateway(history []string) (string, error) {
 			return alternatives[0], nil
 		}
 	case 2:
-		if contains(history, "stc") {
-			return alternatives[1], nil
+		if contains(history, "stc"){
+			if contains(history, alternatives[0]){
+				return alternatives[1], nil
+			} else {
+				return alternatives[0], nil
+			}
 		}
 		return "stc", nil
 	case 3:
-		metrics.TotallyFailedPortedMessages.WithLabelValues(history[0], history[1], history[2]).Inc()
 		return "", errors.New("unable to port message, tried all gateways, len: 3")
 	}
 	return "", errors.New("invalid gateway history length: " + strconv.Itoa(len(history)))
